@@ -37,7 +37,7 @@ class ConfigTest(FileTestCase):
         self.configuration_file_path = "/usr/test/path/google-ads.yaml"
         self.impersonated_email = "impersonated@account.com"
         self.use_proto_plus = False
-        self.use_cloud_org_for_api_access = False
+        self.use_application_default_credentials = True
         # The below fields are defaults that include required keys.
         # They are merged with other keys in individual tests, and isolated
         # here so that new required keys don't need to be added to each test.
@@ -119,10 +119,9 @@ class ConfigTest(FileTestCase):
         self.assertEqual(result["client_secret"], self.client_secret)
         self.assertEqual(result["refresh_token"], self.refresh_token)
 
-    def test_load_from_yaml_file_missing_developer_token(self):
-        """Should raise ValueError if developer_token key is missing."""
+    def test_load_from_yaml_file_without_developer_token(self):
+        """Should load config successfully even if developer_token key is missing."""
         file_path = os.path.join(os.path.expanduser("~"), "google-ads.yaml")
-        # save a YAML file without a required developer_token key
         self.fs.create_file(
             file_path,
             contents=yaml.safe_dump(
@@ -135,7 +134,9 @@ class ConfigTest(FileTestCase):
             ),
         )
 
-        self.assertRaises(ValueError, config.load_from_yaml_file)
+        result = config.load_from_yaml_file()
+        self.assertIsNone(result.get("developer_token"))
+        self.assertEqual(result["use_proto_plus"], self.use_proto_plus)
 
     def test_load_from_yaml_file_missing_use_proto_plus_key(self):
         """Should raise ValueError if use_proto_plus key is missing."""
@@ -264,11 +265,10 @@ class ConfigTest(FileTestCase):
 
     def test_parse_yaml_document_to_dict_missing_required_key(self):
         """Should raise ValueError if yaml string is missing a required key."""
-        # YAML document is missing the required developer_token key
+        # YAML document is missing the required use_proto_plus key
         yaml_doc = f"""
             client_id: {self.client_id}\n
             client_secret: {self.client_secret}\n
-            use_proto_plus: {self.use_proto_plus}\n
             refresh_token: {self.refresh_token}\n
             """
 
@@ -287,6 +287,17 @@ class ConfigTest(FileTestCase):
             },
         }
         self.assertEqual(config.load_from_dict(config_data), config_data)
+
+    def test_load_from_dict_login_customer_id_explicit_none(self):
+        """Should not raise ValueError when login_customer_id is explicitly None."""
+        config_data = {
+            **self.default_dict_config,
+            "login_customer_id": None,
+        }
+        try:
+            config.load_from_dict(config_data)
+        except ValueError as ex:
+            self.fail(f"load_from_dict raised ValueError unexpectedly: {ex}")
 
     def test_load_from_dict_logging(self):
         """Should load logging config from dict."""
@@ -318,6 +329,17 @@ class ConfigTest(FileTestCase):
             },
         }
         self.assertEqual(config.load_from_dict(config_data), config_data)
+
+    def test_load_from_dict_ads_assistant(self):
+        """Should load "ads_assistant" config from dict."""
+        config_data = {
+            **self.default_dict_config,
+            **{
+                "ads_assistant": "1.6.0",
+            },
+        }
+        result = config.load_from_dict(config_data)
+        self.assertEqual(result["ads_assistant"], "1.6.0")
 
     def test_load_from_dict_secondary_service_account_keys(self):
         """Should convert secondary keys to primary keys."""
@@ -355,6 +377,7 @@ class ConfigTest(FileTestCase):
                 "GOOGLE_ADS_LINKED_CUSTOMER_ID": self.linked_customer_id,
                 "GOOGLE_ADS_JSON_KEY_FILE_PATH": self.json_key_file_path,
                 "GOOGLE_ADS_IMPERSONATED_EMAIL": self.impersonated_email,
+                "GOOGLE_ADS_USE_APPLICATION_DEFAULT_CREDENTIALS": self.use_application_default_credentials,
             },
         }
 
@@ -374,6 +397,7 @@ class ConfigTest(FileTestCase):
                     "linked_customer_id": self.linked_customer_id,
                     "json_key_file_path": self.json_key_file_path,
                     "impersonated_email": self.impersonated_email,
+                    "use_application_default_credentials": self.use_application_default_credentials,
                 },
             )
             config_spy.assert_called_once()
@@ -381,7 +405,7 @@ class ConfigTest(FileTestCase):
     @mock.patch.object(config, "_logger", mock.Mock())
     def test_load_from_env_missing_required_key(self):
         """Should raise ValueError if missing required env var.."""
-        # environ is missing required developer_token key
+        # environ is missing required use_proto_plus key
         environ = {
             "GOOGLE_ADS_CLIENT_ID": self.client_id,
             "GOOGLE_ADS_CLIENT_SECRET": self.client_secret,
@@ -395,6 +419,21 @@ class ConfigTest(FileTestCase):
 
         with mock.patch("os.environ", environ):
             self.assertRaises(ValueError, config.load_from_env)
+
+    @mock.patch.object(config, "_logger", mock.Mock())
+    def test_load_from_env_without_developer_token(self):
+        """Should load config from env successfully without developer_token."""
+        environ = {
+            "GOOGLE_ADS_CLIENT_ID": self.client_id,
+            "GOOGLE_ADS_CLIENT_SECRET": self.client_secret,
+            "GOOGLE_ADS_REFRESH_TOKEN": self.refresh_token,
+            "GOOGLE_ADS_USE_PROTO_PLUS": str(self.use_proto_plus),
+        }
+
+        with mock.patch("os.environ", environ):
+            result = config.load_from_env()
+            self.assertIsNone(result.get("developer_token"))
+            self.assertEqual(result["use_proto_plus"], self.use_proto_plus)
 
     def test_load_from_env_config_file_path(self):
         """Should delegate to load_from_yaml_file method."""
@@ -443,13 +482,16 @@ class ConfigTest(FileTestCase):
             },
         }
 
-        with mock.patch("os.environ", environ), mock.patch.object(
-            # Mock load_from_yaml_file return value so it returns
-            # a default dict config that passes validation
-            config,
-            "load_from_yaml_file",
-            return_value=self.default_dict_config,
-        ) as spy:
+        with (
+            mock.patch("os.environ", environ),
+            mock.patch.object(
+                # Mock load_from_yaml_file return value so it returns
+                # a default dict config that passes validation
+                config,
+                "load_from_yaml_file",
+                return_value=self.default_dict_config,
+            ) as spy,
+        ):
             # Assert that the config values were retrieved from the yaml
             # file and not from environment variables.
             result = config.load_from_env()
@@ -578,7 +620,7 @@ class ConfigTest(FileTestCase):
 
     def test_validate_login_customer_id_unicode(self):
         self.assertRaises(
-            ValueError, config.validate_login_customer_id, "1230\u00B2"
+            ValueError, config.validate_login_customer_id, "1230\u00b2"
         )
 
     def test_validate_login_customer_id_embedded(self):
@@ -661,31 +703,44 @@ class ConfigTest(FileTestCase):
     def test_disambiguate_string_bool_raises_type_error(self):
         self.assertRaises(TypeError, config.disambiguate_string_bool, {})
 
-    def test_load_from_env_use_cloud_org_for_api_access(self):
-        """Should load api access flag from environment when specified"""
+    def test_load_from_env_ads_assistant(self):
+        """Should load ads api assistant flag from environment when specified"""
         environ = {
             **self.default_env_var_config,
             **{
-                "GOOGLE_ADS_USE_CLOUD_ORG_FOR_API_ACCESS": self.use_cloud_org_for_api_access,
+                "GOOGLE_ADS_ADS_ASSISTANT": "1.6.0",
             },
         }
 
         with mock.patch("os.environ", environ):
             results = config.load_from_env()
             self.assertEqual(
-                results["use_cloud_org_for_api_access"],
-                self.use_cloud_org_for_api_access,
+                results["ads_assistant"],
+                "1.6.0",
             )
 
-    def test_load_from_yaml_file_use_cloud_org_for_api_access(self):
-        """Should load "use_cloud_org_for_api_access" config from a yaml."""
-        self._create_mock_yaml({"use_cloud_org_for_api_access": True})
+    def test_load_from_yaml_file_ads_assistant(self):
+        """Should load "ads_assistant" config from a yaml."""
+        self._create_mock_yaml({"ads_assistant": "1.6.0"})
 
         result = config.load_from_yaml_file()
-        self.assertEqual(result["use_cloud_org_for_api_access"], True)
+        self.assertEqual(result["ads_assistant"], "1.6.0")
 
-    def test_load_from_yaml_file_use_cloud_org_for_api_access_not_set(self):
-        """Should set "use_cloud_org_for_api_access" as None when not set."""
+    def test_load_from_yaml_file_ads_assistant_not_set(self):
+        """Should set "ads_assistant" as False when not set."""
         self._create_mock_yaml({})
         result = config.load_from_yaml_file()
-        self.assertEqual(result.get("use_cloud_org_for_api_access"), None)
+        self.assertEqual(result.get("ads_assistant"), None)
+
+    def test_load_from_yaml_file_use_account_default_credentials(self):
+        """Should load "use_account_default_credentials" config from a yaml."""
+        self._create_mock_yaml({"use_account_default_credentials": True})
+
+        result = config.load_from_yaml_file()
+        self.assertEqual(result["use_account_default_credentials"], True)
+
+    def test_load_from_yaml_file_use_account_default_credentials_not_set(self):
+        """Should set "use_account_default_credentials" as None when not set."""
+        self._create_mock_yaml({})
+        result = config.load_from_yaml_file()
+        self.assertEqual(result.get("use_account_default_credentials"), None)

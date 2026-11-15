@@ -19,29 +19,42 @@ https://developers.google.com/google-ads/api/fields/latest/click_view.
 To set up a conversion action, run the add_conversion_action.py example.
 """
 
-
 import argparse
 import sys
+from typing import Optional
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
+from google.ads.googleads.v24.services.services.conversion_action_service import (
+    ConversionActionServiceClient,
+)
+from google.ads.googleads.v24.services.services.conversion_upload_service import (
+    ConversionUploadServiceClient,
+)
+from google.ads.googleads.v24.services.types.conversion_upload_service import (
+    ClickConversion,
+    ClickConversionResult,
+    CustomVariable,
+    UploadClickConversionsRequest,
+    UploadClickConversionsResponse,
+)
 
 
 # [START upload_offline_conversion]
 def main(
-    client,
-    customer_id,
-    conversion_action_id,
-    gclid,
-    conversion_date_time,
-    conversion_value,
-    conversion_custom_variable_id,
-    conversion_custom_variable_value,
-    gbraid,
-    wbraid,
-    order_id,
-    ad_user_data_consent,
-):
+    client: GoogleAdsClient,
+    customer_id: str,
+    conversion_action_id: str,
+    gclid: Optional[str],
+    conversion_date_time: str,
+    conversion_value: str,
+    conversion_custom_variable_id: Optional[str],
+    conversion_custom_variable_value: Optional[str],
+    gbraid: Optional[str],
+    wbraid: Optional[str],
+    order_id: Optional[str],
+    ad_user_data_consent: Optional[str],
+) -> None:
     """Creates a click conversion with a default currency of USD.
 
     Args:
@@ -65,9 +78,13 @@ def main(
         order_id: The order ID for the click conversion.
         ad_user_data_consent: The ad user data consent for the click.
     """
-    click_conversion = client.get_type("ClickConversion")
-    conversion_upload_service = client.get_service("ConversionUploadService")
-    conversion_action_service = client.get_service("ConversionActionService")
+    click_conversion: ClickConversion = client.get_type("ClickConversion")
+    conversion_upload_service: ConversionUploadServiceClient = (
+        client.get_service("ConversionUploadService")
+    )
+    conversion_action_service: ConversionActionServiceClient = (
+        client.get_service("ConversionActionService")
+    )
     click_conversion.conversion_action = (
         conversion_action_service.conversion_action_path(
             customer_id, conversion_action_id
@@ -87,7 +104,9 @@ def main(
     click_conversion.currency_code = "USD"
 
     if conversion_custom_variable_id and conversion_custom_variable_value:
-        conversion_custom_variable = client.get_type("CustomVariable")
+        conversion_custom_variable: CustomVariable = client.get_type(
+            "CustomVariable"
+        )
         conversion_custom_variable.conversion_custom_variable = (
             conversion_upload_service.conversion_custom_variable_path(
                 customer_id, conversion_custom_variable_id
@@ -114,16 +133,20 @@ def main(
     # multiple conversions to upload, it's most efficient to upload them in a
     # single request. See the following for per-request limits for reference:
     # https://developers.google.com/google-ads/api/docs/best-practices/quotas#conversion_upload_service
-    request = client.get_type("UploadClickConversionsRequest")
+    request: UploadClickConversionsRequest = client.get_type(
+        "UploadClickConversionsRequest"
+    )
     request.customer_id = customer_id
     request.conversions.append(click_conversion)
     request.partial_failure = True
-    conversion_upload_response = (
+    conversion_upload_response: UploadClickConversionsResponse = (
         conversion_upload_service.upload_click_conversions(
             request=request,
         )
     )
-    uploaded_click_conversion = conversion_upload_response.results[0]
+    uploaded_click_conversion: ClickConversionResult = (
+        conversion_upload_response.results[0]
+    )
     print(
         f"Uploaded conversion that occurred at "
         f'"{uploaded_click_conversion.conversion_date_time}" from '
@@ -134,7 +157,13 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
+    # GoogleAdsClient will read the google-ads.yaml configuration file in the
+    # home directory if none is specified.
+    googleads_client: GoogleAdsClient = GoogleAdsClient.load_from_storage(
+        version="v24"
+    )
+
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Uploads an offline conversion."
     )
     # The following argument(s) should be provided to run the example.
@@ -220,14 +249,14 @@ if __name__ == "__main__":
         "-s",
         "--ad_user_data_consent",
         type=str,
-        choices=[e.name for e in googleads_client.enums.ConsentStatusEnum],
+        choices=[
+            e.name
+            for e in googleads_client.enums.ConsentStatusEnum
+            if e.name not in ("UNSPECIFIED", "UNKNOWN")
+        ],
         help=("The ad user data consent for the click."),
     )
-    args = parser.parse_args()
-
-    # GoogleAdsClient will read the google-ads.yaml configuration file in the
-    # home directory if none is specified.
-    googleads_client = GoogleAdsClient.load_from_storage(version="v17")
+    args: argparse.Namespace = parser.parse_args()
 
     try:
         main(

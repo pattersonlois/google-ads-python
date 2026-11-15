@@ -17,6 +17,7 @@
 
 import argparse
 import sys
+from typing import Optional, Dict, List, Any
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
@@ -24,7 +25,7 @@ from google.ads.googleads.errors import GoogleAdsException
 _DEFAULT_LOG_SPACE_LENGTH = 4
 
 
-def account_hierarchy_module(google_ads_client, customer_id):
+def account_hierarchy_module(google_ads_client: GoogleAdsClient, customer_id: Optional[str]):
     """Print the account hierarchy for the given login customer ID.
 
     Args:
@@ -74,7 +75,7 @@ def account_hierarchy_module(google_ads_client, customer_id):
         # Performs a breadth-first search to build a Dictionary that maps
         # managers to their child accounts (customer_ids_to_child_accounts).
         unprocessed_customer_ids = [seed_customer_id]
-        customer_ids_to_child_accounts = dict()
+        customer_ids_to_child_accounts: Dict[str, List[Any]] = dict()
         root_customer_client = None
 
         while unprocessed_customer_ids:
@@ -129,7 +130,7 @@ def account_hierarchy_module(google_ads_client, customer_id):
 
 
 def print_account_hierarchy(
-    customer_client, customer_ids_to_child_accounts, depth
+    customer_client: Any, customer_ids_to_child_accounts: Dict[str, List[Any]], depth: int
 ):
     """Prints the specified account's hierarchy using recursion.
 
@@ -157,7 +158,7 @@ def print_account_hierarchy(
             )
 
 
-def get_users_module(google_ads_client, customer_id):
+def get_users_module(google_ads_client: GoogleAdsClient, customer_id: Optional[str]):
     """Prints the user access information for the given customer_id.
 
     Args:
@@ -167,7 +168,7 @@ def get_users_module(google_ads_client, customer_id):
     """
     googleads_service = google_ads_client.get_service("GoogleAdsService")
     customer_service = google_ads_client.get_service("CustomerService")
-    query = f"""
+    query = """
     SELECT
       customer_user_access.user_id,
       customer_user_access.email_address,
@@ -214,7 +215,7 @@ if __name__ == "__main__":
             f'Request with ID "{ex.request_id}" failed with status '
             f'"{ex.error.code().name}" '
         )
-        print(f"And includes the following errors:")
+        print("And includes the following errors:")
         for error in ex.failure.errors:
             print(f'\tError with message "{error.message}".')
             if error.location:

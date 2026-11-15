@@ -13,13 +13,14 @@
 # limitations under the License.
 """Tests for the Google Ads API client library."""
 
+import asyncio
 from importlib import import_module
 from inspect import getmembers
-from unittest import mock
+import json
+from unittest import IsolatedAsyncioTestCase, TestCase, mock
 import os
 import pickle
 from pyfakefs.fake_filesystem_unittest import TestCase as FileTestCase
-from unittest import TestCase
 import yaml
 
 from google.protobuf.message import Message as ProtobufMessageType
@@ -30,6 +31,7 @@ from google.ads.googleads import client as Client
 
 latest_version = Client._DEFAULT_VERSION
 valid_versions = Client._VALID_API_VERSIONS
+message_types = Client._MESSAGE_TYPES
 
 services_path = f"google.ads.googleads.{latest_version}.services.services"
 services = import_module(services_path)
@@ -112,7 +114,7 @@ class GoogleAdsClientTest(TestCase):
                     "logging_config": None,
                     "linked_customer_id": self.linked_customer_id,
                     "http_proxy": None,
-                    "use_cloud_org_for_api_access": None,
+                    "ads_assistant": None,
                 },
             )
 
@@ -145,7 +147,7 @@ class GoogleAdsClientTest(TestCase):
                     "logging_config": None,
                     "linked_customer_id": None,
                     "http_proxy": None,
-                    "use_cloud_org_for_api_access": None,
+                    "ads_assistant": None,
                 },
             )
 
@@ -178,7 +180,7 @@ class GoogleAdsClientTest(TestCase):
                     "logging_config": None,
                     "linked_customer_id": self.linked_customer_id,
                     "http_proxy": None,
-                    "use_cloud_org_for_api_access": None,
+                    "ads_assistant": None,
                 },
             )
 
@@ -211,7 +213,7 @@ class GoogleAdsClientTest(TestCase):
                     "logging_config": None,
                     "login_customer_id": None,
                     "http_proxy": None,
-                    "use_cloud_org_for_api_access": None,
+                    "ads_assistant": None,
                 },
             )
 
@@ -244,7 +246,7 @@ class GoogleAdsClientTest(TestCase):
                     "logging_config": None,
                     "linked_customer_id": None,
                     "http_proxy": self.http_proxy,
-                    "use_cloud_org_for_api_access": None,
+                    "ads_assistant": None,
                 },
             )
 
@@ -278,7 +280,7 @@ class GoogleAdsClientTest(TestCase):
                     "logging_config": None,
                     "linked_customer_id": None,
                     "http_proxy": None,
-                    "use_cloud_org_for_api_access": None,
+                    "ads_assistant": None,
                 },
             )
 
@@ -293,15 +295,17 @@ class GoogleAdsClientTest(TestCase):
             },
         }
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials, mock.patch.dict(
-            os.environ, config
-        ) as mock_os_environ:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+            mock.patch.dict(os.environ, config) as mock_os_environ,
+        ):
             Client.GoogleAdsClient.load_from_env()
 
             mock_client_init.assert_called_once_with(
@@ -314,7 +318,7 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_env_versioned(self):
@@ -328,15 +332,17 @@ class GoogleAdsClientTest(TestCase):
             },
         }
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials, mock.patch.dict(
-            os.environ, config
-        ) as mock_os_environ:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+            mock.patch.dict(os.environ, config) as mock_os_environ,
+        ):
             Client.GoogleAdsClient.load_from_env(version="v4")
 
             mock_client_init.assert_called_once_with(
@@ -349,7 +355,7 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version="v4",
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_dict(self):
@@ -363,13 +369,16 @@ class GoogleAdsClientTest(TestCase):
         }
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_dict(config)
 
             mock_client_init.assert_called_once_with(
@@ -382,7 +391,7 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_dict_versioned(self):
@@ -396,13 +405,16 @@ class GoogleAdsClientTest(TestCase):
         }
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_dict(config, version="v4")
 
             mock_client_init.assert_called_once_with(
@@ -415,7 +427,50 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version="v4",
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
+            )
+
+    def test_load_from_dict_login_customer_id_explicit_none(self):
+        config = {
+            **self.default_config,
+            **{
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "refresh_token": self.refresh_token,
+                "login_customer_id": None,
+            },
+        }
+        mock_credentials_instance = mock.Mock()
+
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
+            try:
+                Client.GoogleAdsClient.load_from_dict(config)
+            except ValueError as ex:
+                self.fail(
+                    "GoogleAdsClient.load_from_dict raised ValueError "
+                    f"unexpectedly when login_customer_id is None: {ex}"
+                )
+
+            mock_client_init.assert_called_once_with(
+                credentials=mock_credentials_instance,
+                developer_token=self.developer_token,
+                use_proto_plus=self.use_proto_plus,
+                endpoint=None,
+                login_customer_id=None,
+                logging_config=None,
+                linked_customer_id=None,
+                version=None,
+                http_proxy=None,
+                ads_assistant=None,
             )
 
     def test_load_from_string(self):
@@ -429,13 +484,16 @@ class GoogleAdsClientTest(TestCase):
         }
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_string(yaml.dump(config))
 
             mock_client_init.assert_called_once_with(
@@ -448,7 +506,7 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_string_versioned(self):
@@ -462,13 +520,16 @@ class GoogleAdsClientTest(TestCase):
         }
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_string(
                 yaml.dump(config), version="v4"
             )
@@ -483,24 +544,62 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version="v4",
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_get_service(self):
         # Retrieve service names for all defined service clients.
         for ver in valid_versions:
-            services_path = f"google.ads.googleads.{ver}"
-            service_names = [
-                f'{name.rsplit("ServiceClient")[0]}Service'
-                for name in dir(import_module(services_path))
-                if "ServiceClient" in name
+            services_filepath = f"google/ads/googleads/{ver}/services/services"
+            # Retrieve list of all the services that exist under the
+            # {version}/services/services directory.
+            service_dir_names = [
+                name
+                for name in os.listdir(services_filepath)
+                if name.endswith("_service")
             ]
 
-            client = self._create_test_client()
+            client = self._create_test_client(version=ver)
 
-            # Iterate through retrieval of all service clients by name.
-            for service_name in service_names:
-                client.get_service(service_name, version=ver)
+            for dir_name in service_dir_names:
+                # Converts from snake case to title case, for example:
+                # google_ads_service --> GoogleAdsService
+                service_name = "".join(
+                    [part.capitalize() for part in dir_name.split("_")]
+                )
+
+                # Load each service module
+                svc = client.get_service(service_name)
+                self.assertEqual(
+                    svc.__class__.__name__, f"{service_name}Client"
+                )
+
+    def test_get_async_service(self):
+        # Retrieve service names for all defined service clients.
+        for ver in valid_versions:
+            services_filepath = f"google/ads/googleads/{ver}/services/services"
+            # Retrieve list of all the services that exist under the
+            # {version}/services/services directory.
+            service_dir_names = [
+                name
+                for name in os.listdir(services_filepath)
+                if name.endswith("_service")
+            ]
+
+            client = self._create_test_client(version=ver)
+
+            for dir_name in service_dir_names:
+                # Converts from snake case to title case, for example:
+                # google_ads_service --> GoogleAdsService
+                service_name = "".join(
+                    [part.capitalize() for part in dir_name.split("_")]
+                )
+
+                # Load each service module
+                svc = client.get_service(service_name, is_async=True)
+                self.assertEqual(
+                    svc.__class__.__name__, f"{service_name}AsyncClient"
+                )
 
     def test_get_service_custom_endpoint(self):
         service_name = "GoogleAdsService"
@@ -551,17 +650,23 @@ class GoogleAdsClientTest(TestCase):
 
     def test_get_type(self):
         for ver in valid_versions:
-            # Retrieve names for all types defined in pb2 files.
-            type_path = f"google.ads.googleads.{ver}"
-            type_names = import_module(type_path).__all__
+            type_classnames = []
+            # Build up all the names of each type class.
+            for type in message_types:
+                # Types from services are located in a slightly different
+                # location.
+                if type == "services":
+                    type_path = f"google.ads.googleads.{ver}.{type}.types"
+                else:
+                    type_path = f"google.ads.googleads.{ver}.{type}"
+
+                # Retrieve names for all types defined in pb2 files.
+                type_names = import_module(type_path).__all__
+                type_classnames.extend(type_names)
+
             client = self._create_test_client()
             # Iterate through retrieval of all types by name.
-            for name in type_names:
-                if name.lower().endswith(
-                    "serviceclient"
-                ) or name.lower().endswith("transport"):
-                    continue
-
+            for name in type_classnames:
                 try:
                     client.get_type(name, version=ver)
                 except ValueError as error:
@@ -597,11 +702,12 @@ class GoogleAdsClientTest(TestCase):
 
     def test_init_no_logging_config(self):
         """Should call logging.config.dictConfig if logging config exists."""
-        with mock.patch(
-            "logging.config.dictConfig"
-        ) as mock_dictConfig, mock.patch.object(
-            Client.oauth2, "get_installed_app_credentials"
-        ) as mock_credentials:
+        with (
+            mock.patch("logging.config.dictConfig") as mock_dictConfig,
+            mock.patch.object(
+                Client.oauth2, "get_installed_app_credentials"
+            ) as mock_credentials,
+        ):
             mock_credentials_instance = mock_credentials.return_value
             mock_credentials_instance.refresh_token = self.refresh_token
             mock_credentials_instance.client_id = self.client_id
@@ -614,11 +720,12 @@ class GoogleAdsClientTest(TestCase):
     def test_init_with_logging_config(self):
         """Configured LoggingInterceptor should call logging.dictConfig."""
         config = {"test": True}
-        with mock.patch(
-            "logging.config.dictConfig"
-        ) as mock_dictConfig, mock.patch.object(
-            Client.oauth2, "get_installed_app_credentials"
-        ) as mock_credentials:
+        with (
+            mock.patch("logging.config.dictConfig") as mock_dictConfig,
+            mock.patch.object(
+                Client.oauth2, "get_installed_app_credentials"
+            ) as mock_credentials,
+        ):
             mock_credentials_instance = mock_credentials.return_value
             mock_credentials_instance.refresh_token = self.refresh_token
             mock_credentials_instance.client_id = self.client_id
@@ -821,15 +928,17 @@ class GoogleAdsClientTest(TestCase):
             },
         }
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials, mock.patch.dict(
-            os.environ, config
-        ) as mock_os_environ:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+            mock.patch.dict(os.environ, config) as mock_os_environ,
+        ):
             Client.GoogleAdsClient.load_from_env()
 
             mock_client_init.assert_called_once_with(
@@ -842,7 +951,7 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=self.http_proxy,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_http_proxy_from_dict(self):
@@ -857,13 +966,16 @@ class GoogleAdsClientTest(TestCase):
         }
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_dict(config)
 
             mock_client_init.assert_called_once_with(
@@ -876,7 +988,7 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=self.http_proxy,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_http_proxy_from_string(self):
@@ -891,13 +1003,16 @@ class GoogleAdsClientTest(TestCase):
         }
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_string(yaml.dump(config))
 
             mock_client_init.assert_called_once_with(
@@ -910,8 +1025,182 @@ class GoogleAdsClientTest(TestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=self.http_proxy,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
+
+    def test_client_info_package_not_found(self):
+        with mock.patch(
+            "google.ads.googleads.client.metadata.version"
+        ) as mock_version:
+            mock_version.side_effect = Client.metadata.PackageNotFoundError
+            from importlib import reload
+
+            reload(Client)
+            self.assertIsInstance(Client._CLIENT_INFO, Client.ClientInfo)
+            self.assertIsNone(Client._CLIENT_INFO.client_library_version)
+
+        reload(Client)
+
+    def test_youtube_video_upload_service_sync_resumable_session(self):
+        rest_mod = import_module(
+            f"google.ads.googleads.{latest_version}.services.services."
+            "you_tube_video_upload_service.transports.rest"
+        )
+        test_proxy = "http://localhost:8000"
+        client = Client.GoogleAdsClient(
+            credentials=mock.Mock(),
+            developer_token=self.developer_token,
+            login_customer_id=self.login_customer_id,
+            linked_customer_id=self.linked_customer_id,
+            endpoint="custom.ads.googleapis.com",
+            http_proxy=test_proxy,
+            use_proto_plus=True,
+            ads_assistant="1.2.3",
+            version=latest_version,
+        )
+        self.addCleanup(
+            Client._GRPC_CHANNEL_OPTIONS.remove,
+            ("grpc.http_proxy", test_proxy),
+        )
+
+        svc = client.get_service("YouTubeVideoUploadService")
+        self.assertIsNone(svc.transport._rest_transport._transport)
+
+        request = client.get_type("CreateYouTubeVideoUploadRequest")
+        request.customer_id = "9998887777"
+        request.you_tube_video_upload.video_title = "My Video"
+        request.you_tube_video_upload.video_privacy = (
+            client.enums.YouTubeVideoPrivacyEnum.UNLISTED
+        )
+
+        with mock.patch.object(
+            rest_mod.resumable_transfer,
+            "ResumableUploadSession",
+            wraps=rest_mod.resumable_transfer.ResumableUploadSession,
+        ) as mock_session_cls:
+            session = svc.create_you_tube_video_upload(request=request)
+
+        self.assertIsInstance(
+            session, rest_mod.resumable_transfer.ResumableUploadSession
+        )
+        call_kwargs = mock_session_cls.call_args.kwargs
+        self.assertEqual(
+            call_kwargs["upload_url"],
+            f"https://custom.ads.googleapis.com/resumable/upload/"
+            f"{latest_version}/customers/9998887777/youTubeVideoUploads:create",
+        )
+        headers = call_kwargs["config"].headers
+        self.assertEqual(headers["developer-token"], self.developer_token)
+        self.assertEqual(headers["login-customer-id"], self.login_customer_id)
+        self.assertEqual(headers["linked-customer-id"], self.linked_customer_id)
+        self.assertEqual(
+            headers["x-goog-request-params"], "customer_id=9998887777"
+        )
+        self.assertIn("gaada/1.2.3", headers["x-goog-api-client"])
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(
+            call_kwargs["transport"].proxies,
+            {"http": test_proxy, "https": test_proxy},
+        )
+        body_dict = json.loads(call_kwargs["request_body"])
+        self.assertEqual(
+            body_dict["youTubeVideoUpload"]["videoTitle"], "My Video"
+        )
+        self.assertEqual(
+            body_dict["youTubeVideoUpload"]["videoPrivacy"], "UNLISTED"
+        )
+        svc.transport.close()
+
+    def test_youtube_video_upload_service_sync_protobuf_request(self):
+        rest_mod = import_module(
+            f"google.ads.googleads.{latest_version}.services.services."
+            "you_tube_video_upload_service.transports.rest"
+        )
+        client = Client.GoogleAdsClient(
+            credentials=mock.Mock(),
+            developer_token=self.developer_token,
+            use_proto_plus=False,
+            version=latest_version,
+        )
+        svc = client.get_service("YouTubeVideoUploadService")
+        request = client.get_type("CreateYouTubeVideoUploadRequest")
+        request.customer_id = "9998887777"
+        request.you_tube_video_upload.video_title = "Protobuf Video"
+
+        with mock.patch.object(
+            rest_mod.resumable_transfer,
+            "ResumableUploadSession",
+            wraps=rest_mod.resumable_transfer.ResumableUploadSession,
+        ) as mock_session_cls:
+            svc.create_you_tube_video_upload(request=request)
+
+        body_dict = json.loads(
+            mock_session_cls.call_args.kwargs["request_body"]
+        )
+        self.assertEqual(
+            body_dict["youTubeVideoUpload"]["videoTitle"], "Protobuf Video"
+        )
+        svc.transport.close()
+
+    def test_youtube_video_upload_service_legacy_signature(self):
+        class FakeLegacyClient:
+            DEFAULT_ENDPOINT = "googleads.googleapis.com"
+
+            def __init__(
+                self,
+                *,
+                transport=None,
+                credentials=None,
+                developer_token=None,
+                login_customer_id=None,
+                linked_customer_id=None,
+            ):
+                self.transport = transport
+                self.credentials = credentials
+                self.developer_token = developer_token
+                self.login_customer_id = login_customer_id
+                self.linked_customer_id = linked_customer_id
+
+            @classmethod
+            def get_transport_class(cls, label=None):
+                transport_cls = mock.MagicMock()
+                transport_cls.create_channel.return_value = mock.MagicMock()
+                return transport_cls
+
+        fake_module = mock.MagicMock()
+        fake_module.YouTubeVideoUploadServiceClient = FakeLegacyClient
+
+        creds = mock.Mock()
+        client = Client.GoogleAdsClient(
+            credentials=creds,
+            developer_token=self.developer_token,
+            login_customer_id=self.login_customer_id,
+            linked_customer_id=self.linked_customer_id,
+            version=latest_version,
+        )
+
+        orig_import = Client.import_module
+
+        def _fake_import(mod_name, *args, **kwargs):
+            if mod_name.endswith(".services.you_tube_video_upload_service"):
+                return fake_module
+            return orig_import(mod_name, *args, **kwargs)
+
+        with (
+            mock.patch.object(
+                Client, "import_module", side_effect=_fake_import
+            ),
+            mock.patch.object(
+                Client.grpc, "intercept_channel", return_value=mock.MagicMock()
+            ),
+        ):
+            svc = client.get_service("YouTubeVideoUploadService")
+
+        self.assertIsInstance(svc, FakeLegacyClient)
+        self.assertIs(svc.credentials, creds)
+        self.assertEqual(svc.developer_token, self.developer_token)
+        self.assertEqual(svc.login_customer_id, self.login_customer_id)
+        self.assertEqual(svc.linked_customer_id, self.linked_customer_id)
 
 
 class GoogleAdsClientTestFs(FileTestCase):
@@ -944,13 +1233,16 @@ class GoogleAdsClientTestFs(FileTestCase):
         self.fs.create_file(file_path, contents=yaml.safe_dump(config))
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_storage()
             mock_credentials.assert_called_once_with(
                 config.get("client_id"),
@@ -968,7 +1260,7 @@ class GoogleAdsClientTestFs(FileTestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=self.http_proxy,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_storage(self):
@@ -985,13 +1277,16 @@ class GoogleAdsClientTestFs(FileTestCase):
         self.fs.create_file(file_path, contents=yaml.safe_dump(config))
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_storage()
             mock_credentials.assert_called_once_with(
                 config.get("client_id"),
@@ -1009,7 +1304,7 @@ class GoogleAdsClientTestFs(FileTestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_storage_versioned(self):
@@ -1026,13 +1321,16 @@ class GoogleAdsClientTestFs(FileTestCase):
         self.fs.create_file(file_path, contents=yaml.safe_dump(config))
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_storage(version="v4")
             mock_credentials.assert_called_once_with(
                 config.get("client_id"),
@@ -1050,7 +1348,7 @@ class GoogleAdsClientTestFs(FileTestCase):
                 linked_customer_id=None,
                 version="v4",
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_storage_login_cid_int(self):
@@ -1069,13 +1367,16 @@ class GoogleAdsClientTestFs(FileTestCase):
         self.fs.create_file(file_path, contents=yaml.safe_dump(config))
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_storage()
             mock_credentials.assert_called_once_with(
                 config.get("client_id"),
@@ -1093,7 +1394,7 @@ class GoogleAdsClientTestFs(FileTestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_storage_custom_path(self):
@@ -1110,12 +1411,15 @@ class GoogleAdsClientTestFs(FileTestCase):
         self.fs.create_file(file_path, contents=yaml.safe_dump(config))
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_installed_app_credentials",
-            return_value=mock_credentials_instance,
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_installed_app_credentials",
+                return_value=mock_credentials_instance,
+            ),
         ):
             Client.GoogleAdsClient.load_from_storage(path=file_path)
             mock_client_init.assert_called_once_with(
@@ -1128,7 +1432,7 @@ class GoogleAdsClientTestFs(FileTestCase):
                 linked_customer_id=None,
                 version=None,
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
 
     def test_load_from_storage_file_not_found(self):
@@ -1167,13 +1471,16 @@ class GoogleAdsClientTestFs(FileTestCase):
         self.fs.create_file(file_path, contents=yaml.safe_dump(config))
         mock_credentials_instance = mock.Mock()
 
-        with mock.patch.object(
-            Client.GoogleAdsClient, "__init__", return_value=None
-        ) as mock_client_init, mock.patch.object(
-            Client.oauth2,
-            "get_service_account_credentials",
-            return_value=mock_credentials_instance,
-        ) as mock_credentials:
+        with (
+            mock.patch.object(
+                Client.GoogleAdsClient, "__init__", return_value=None
+            ) as mock_client_init,
+            mock.patch.object(
+                Client.oauth2,
+                "get_service_account_credentials",
+                return_value=mock_credentials_instance,
+            ) as mock_credentials,
+        ):
             Client.GoogleAdsClient.load_from_storage(version=latest_version)
             mock_credentials.assert_called_once_with(
                 config.get("json_key_file_path"),
@@ -1190,5 +1497,138 @@ class GoogleAdsClientTestFs(FileTestCase):
                 linked_customer_id=None,
                 version=latest_version,
                 http_proxy=None,
-                use_cloud_org_for_api_access=None,
+                ads_assistant=None,
             )
+
+
+class GoogleAdsClientTestAsync(IsolatedAsyncioTestCase):
+    """Async tests for google.ads.googleads.client.GoogleAdsClient."""
+
+    def setUp(self):
+        self.developer_token = DEFAULT_CONFIG["developer_token"]
+        self.login_customer_id = "1234567890"
+        self.linked_customer_id = "0987654321"
+
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        # Restore a default event loop so subsequent synchronous TestCases that
+        # initialize grpc.aio channels continue to find an event loop.
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
+    async def test_youtube_video_upload_service_async_without_extra(self):
+        grpc_asyncio_mod = import_module(
+            f"google.ads.googleads.{latest_version}.services.services."
+            "you_tube_video_upload_service.transports.grpc_asyncio"
+        )
+        client = Client.GoogleAdsClient(
+            credentials=mock.Mock(),
+            developer_token=self.developer_token,
+            version=latest_version,
+        )
+
+        with mock.patch.object(grpc_asyncio_mod, "HAS_ASYNC_REST", False):
+            svc_async = client.get_service(
+                "YouTubeVideoUploadService", is_async=True
+            )
+            request = client.get_type("CreateYouTubeVideoUploadRequest")
+            request.customer_id = "9998887777"
+
+            with self.assertRaisesRegex(
+                NotImplementedError, r"google-ads\[async_rest\]"
+            ):
+                await svc_async.create_you_tube_video_upload(request=request)
+            await svc_async.transport.close()
+
+    async def test_youtube_video_upload_service_async_with_extra(self):
+        grpc_asyncio_mod = import_module(
+            f"google.ads.googleads.{latest_version}.services.services."
+            "you_tube_video_upload_service.transports.grpc_asyncio"
+        )
+        fake_rest_asyncio = mock.MagicMock()
+
+        class FakeBaseInterceptor:
+            async def pre_create_you_tube_video_upload(self, request, metadata):
+                return request, metadata
+
+        captured = {}
+
+        class FakeAsyncRestTransport:
+            def __init__(self, *, host, credentials, client_info, interceptor):
+                captured["host"] = host
+                captured["credentials"] = credentials
+                captured["interceptor"] = interceptor
+                captured["closed"] = False
+
+            async def create_you_tube_video_upload(self, request, **kwargs):
+                _, metadata = (
+                    await captured[
+                        "interceptor"
+                    ].pre_create_you_tube_video_upload(
+                        request, [("x-goog-api-client", "gapic/1.0")]
+                    )
+                )
+                captured["metadata"] = dict(metadata)
+                return "fake-async-session"
+
+            async def close(self):
+                captured["closed"] = True
+
+        fake_rest_asyncio.AsyncYouTubeVideoUploadServiceRestInterceptor = (
+            FakeBaseInterceptor
+        )
+        fake_rest_asyncio.AsyncYouTubeVideoUploadServiceRestTransport = (
+            FakeAsyncRestTransport
+        )
+
+        creds = mock.Mock()
+        client = Client.GoogleAdsClient(
+            credentials=creds,
+            developer_token=self.developer_token,
+            login_customer_id=self.login_customer_id,
+            linked_customer_id=self.linked_customer_id,
+            endpoint="async.ads.googleapis.com",
+            ads_assistant="2.0.0",
+            version=latest_version,
+        )
+
+        orig_import = Client.import_module
+
+        def _fake_import(mod_name, *args, **kwargs):
+            if mod_name.endswith(".transports.rest_asyncio"):
+                return fake_rest_asyncio
+            return orig_import(mod_name, *args, **kwargs)
+
+        with (
+            mock.patch.object(grpc_asyncio_mod, "HAS_ASYNC_REST", True),
+            mock.patch.object(
+                Client, "import_module", side_effect=_fake_import
+            ),
+        ):
+            svc_async = client.get_service(
+                "YouTubeVideoUploadService", is_async=True
+            )
+            self.assertEqual(captured, {})
+
+            request = client.get_type("CreateYouTubeVideoUploadRequest")
+            request.customer_id = "8887776666"
+
+            result = await svc_async.create_you_tube_video_upload(
+                request=request
+            )
+            self.assertEqual(result, "fake-async-session")
+            await svc_async.transport.close()
+
+        self.assertEqual(captured["host"], "async.ads.googleapis.com")
+        self.assertIs(captured["credentials"], creds)
+        self.assertEqual(
+            captured["metadata"]["developer-token"], self.developer_token
+        )
+        self.assertEqual(
+            captured["metadata"]["login-customer-id"], self.login_customer_id
+        )
+        self.assertEqual(
+            captured["metadata"]["linked-customer-id"], self.linked_customer_id
+        )
+        self.assertIn("gaada/2.0.0", captured["metadata"]["x-goog-api-client"])
+        self.assertTrue(captured["closed"])

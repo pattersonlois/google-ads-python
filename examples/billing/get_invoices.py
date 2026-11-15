@@ -14,16 +14,16 @@
 # limitations under the License.
 """Retrieves the invoices issued last month for a given billing setup."""
 
-
 import argparse
 from datetime import date, timedelta
 import sys
+from typing import Optional
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
 
 
-def main(client, customer_id, billing_setup_id):
+def main(client: GoogleAdsClient, customer_id: str, billing_setup_id: str):
     """The main method that creates all necessary entities for the example.
 
     Args:
@@ -50,8 +50,7 @@ def main(client, customer_id, billing_setup_id):
 
     # [START get_invoices_1]
     for invoice in response.invoices:
-        print(
-            f"""
+        print(f"""
 - Found the invoice {invoice.resource_name}
     ID (also known as Invoice Number): '{invoice.id}'
     Type: {invoice.type_}
@@ -78,11 +77,9 @@ def main(client, customer_id, billing_setup_id):
     Corrected invoice: {invoice.corrected_invoice or "none"}
     PDF URL: {invoice.pdf_url}
     Account budgets:
-    """
-        )
+    """)
         for account_budget_summary in invoice.account_budget_summaries:
-            print(
-                f"""
+            print(f"""
                   - Account budget '{account_budget_summary.account_budget}':
                       Name (also known as Account Budget): '{account_budget_summary.account_budget_name}'
                       Customer (also known as Account ID): '{account_budget_summary.customer}'
@@ -95,12 +92,11 @@ def main(client, customer_id, billing_setup_id):
                         subtotal '{_micros_to_currency(account_budget_summary.subtotal_amount_micros)}'
                         tax '{_micros_to_currency(account_budget_summary.tax_amount_micros)}'
                         total '{_micros_to_currency(account_budget_summary.total_amount_micros)}'
-                """
-            )
+                """)
             # [END get_invoices_1]
 
 
-def micros_to_currency(micros):
+def micros_to_currency(micros: Optional[int]) -> Optional[float]:
     return micros / 1000000.0 if micros is not None else None
 
 
@@ -127,7 +123,7 @@ if __name__ == "__main__":
 
     # GoogleAdsClient will read the google-ads.yaml configuration file in the
     # home directory if none is specified.
-    googleads_client = GoogleAdsClient.load_from_storage(version="v17")
+    googleads_client = GoogleAdsClient.load_from_storage(version="v24")
 
     try:
         main(googleads_client, args.customer_id, args.billing_setup_id)

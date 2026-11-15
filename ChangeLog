@@ -1,3 +1,138 @@
+* 35.1.0
+- Google Ads API v26_2 release.
+
+* 35.0.0
+- Google Ads API v26_1 release.
+- Remove support for Python 3.9.
+- Update `YouTubeVideoUploadService` in v26 to use `ResumableUploadSession`,
+  add `async_rest` optional extra for async resumable uploads, and update the
+  `upload_video` example.
+- Update minimum version requirements for `google-api-core`, `protobuf`,
+  `proto-plus`, and `googleapis-common-protos`.
+
+* 34.0.0
+- Google Ads API v26 release.
+
+* 33.0.0
+- Google Ads API v25_2 release.
+- Remove Google Ads API v22.
+- Remove Google Ads API v21.
+
+* 32.0.0
+- Remove validation checking if developer token is present in configuration.
+- Remove `use_cloud_org_for_api_access` configuration option.
+
+* 31.4.0
+- Google Ads API v25_1 release.
+
+* 31.3.0
+- Add logging functionality to examples.
+- Update pyproject.toml license configuration.
+
+* 31.2.0
+- Google Ads API v25_0 release.
+- Remove `LocalServicesLead.contact_details.email` from the masking logic in
+  the logging interceptor, as it was removed from the API.
+
+* 31.1.0
+- Google Ads API v24_2 release.
+- Update experiments examples to support new functionality.
+- Move the ResumableUploadErrorAdapter class to the errors.py file.
+- Add examples and functionality to support Multi-party approval (MPA).
+
+* 31.0.0
+- Google Ads API v24_1 release.
+- Remove Google Ads API v20.
+- Update ansync example tests to remove unecessary mocking.
+
+* 30.1.0
+- Google Ads API v24 release.
+- Update examples to use Google Ads API v24.
+- Fix apply_incentive example to make country code required. (#1070)
+- Fix 'UnaryUnaryCall' object has no attribute 'exception' error in async requests (#1061)
+- Update Generate Forecast Metrics example for v24
+
+* 30.0.0
+- Google Ads API v23_2 release.
+- Fix config module so that login_customer_id=None doesn't raise an error.
+- Rename "gaada" configuration setting to "ads_assistant"
+- Set default for brand_guidelines_enabled to True in Pmax examples.
+- Fix a small bug in setting the video upload resource name
+
+* 29.2.0
+- Google Ads API v23_1 release.
+- Update Google Ads API v20, v21, and v22 to include EU political advertising changes.
+- Add upload_video example.
+- Add text guidelines to performance max example.
+
+* 29.1.0
+- Add configurable metadata header for ads api assistant.
+
+* 29.1.0
+- Add configurable metadata header for ads api assistant.
+
+* 29.0.0
+- Google Ads API v23_0 release.
+- Remove Google Ads API v19.
+
+* 28.4.1
+-  Fix issues with async functionality per issue #1045.
+
+* 28.4.0
+-  Update GoogleAdsClient.get_services method to expose async service clients.
+
+* 28.3.0
+- Add support for Application Default Credentials (ADC) functionality.
+- Add annotations to google/ads/googleads/*.py files.
+- Add minor unit test improvements.
+
+* 28.2.0
+- Add support for Python 3.14.
+
+* 28.1.1
+- Upgrade minimum version of nox so it's compatible with the "uv" backend.
+
+* 28.1.0
+- Google Ads API v22_0 release.
+
+* 28.0.0
+- Google Ads API v21_0 release.
+- Updated to Google Ads API v19_0 and v20_0 to include EU political advertising changes.
+- Remove Google Ads API v18.
+- Add deprecation warnings for Python 3.9 users.
+- Add type annotations to all examples.
+- Add unit tests covering some examples.
+
+* 27.0.0
+- Google Ads API v20_0 release.
+- Remove Google Ads API v17.
+- Add example for generating audience insights.
+- Add example for creating demand gen campaign.
+
+* 26.1.0
+- Google Ads API v19_1 release.
+- Add two new examples for budget recommendations.
+- Fix bug in normalize_and_hash function in enhanced conversions examples.
+- Update enhanced conversions for leads example to include session attributes.
+
+* 26.0.1
+- Rename constraints file to resolve install issues on Windows
+- Update add_customer_match_user_list.py to remove mention of unlimited list expiry (#921)
+- Fix issue importing types defined in service protos
+
+* 26.0.0
+- Migrate to default GAPIC templates
+- Migrate from setup.py to pyproject.toml
+- Remove Google Ads API v16
+- Add support for Python 3.13
+- Remove support for Python 3.8
+
+* 25.2.0
+- Google Ads API v19 release.
+
+* 25.1.0
+- Google Ads API v18 release.
+
 * 25.0.0
 - Google Ads API v17_1 release.
 - Remove support for Google Ads API v15.

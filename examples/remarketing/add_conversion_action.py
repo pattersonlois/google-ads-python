@@ -14,24 +14,37 @@
 # limitations under the License.
 """This example illustrates adding a conversion action."""
 
-
 import argparse
 import sys
 import uuid
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
+from google.ads.googleads.v24.resources.types.conversion_action import (
+    ConversionAction,
+)
+from google.ads.googleads.v24.services.services.conversion_action_service import (
+    ConversionActionServiceClient,
+)
+from google.ads.googleads.v24.services.types.conversion_action_service import (
+    ConversionActionOperation,
+    MutateConversionActionsResponse,
+)
 
 
 # [START add_conversion_action]
-def main(client, customer_id):
-    conversion_action_service = client.get_service("ConversionActionService")
+def main(client: GoogleAdsClient, customer_id: str) -> None:
+    conversion_action_service: ConversionActionServiceClient = (
+        client.get_service("ConversionActionService")
+    )
 
     # Create the operation.
-    conversion_action_operation = client.get_type("ConversionActionOperation")
+    conversion_action_operation: ConversionActionOperation = client.get_type(
+        "ConversionActionOperation"
+    )
 
     # Create conversion action.
-    conversion_action = conversion_action_operation.create
+    conversion_action: ConversionAction = conversion_action_operation.create
 
     # Note that conversion action names must be unique. If a conversion action
     # already exists with the specified conversion_action_name, the create
@@ -47,12 +60,14 @@ def main(client, customer_id):
     conversion_action.view_through_lookback_window_days = 15
 
     # Create a value settings object.
-    value_settings = conversion_action.value_settings
+    value_settings: ConversionAction.ValueSettings = (
+        conversion_action.value_settings
+    )
     value_settings.default_value = 15.0
     value_settings.always_use_default_value = True
 
     # Add the conversion action.
-    conversion_action_response = (
+    conversion_action_response: MutateConversionActionsResponse = (
         conversion_action_service.mutate_conversion_actions(
             customer_id=customer_id,
             operations=[conversion_action_operation],
@@ -67,7 +82,7 @@ def main(client, customer_id):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Adds a conversion action for specified customer."
     )
     # The following argument(s) should be provided to run the example.
@@ -78,11 +93,13 @@ if __name__ == "__main__":
         required=True,
         help="The Google Ads customer ID.",
     )
-    args = parser.parse_args()
+    args: argparse.Namespace = parser.parse_args()
 
     # GoogleAdsClient will read the google-ads.yaml configuration file in the
     # home directory if none is specified.
-    googleads_client = GoogleAdsClient.load_from_storage(version="v17")
+    googleads_client: GoogleAdsClient = GoogleAdsClient.load_from_storage(
+        version="v24"
+    )
 
     try:
         main(googleads_client, args.customer_id)

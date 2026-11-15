@@ -19,12 +19,12 @@ import google.ads.googleads.client
 import google.ads.googleads.errors
 import google.ads.googleads.util
 
-VERSION = "25.0.0"
+VERSION = "35.1.0"
 
-if sys.version_info.major == 3 and sys.version_info.minor <= 8:
+# Checks if the current runtime is Python 3.10.
+if sys.version_info.major == 3 and sys.version_info.minor <= 10:
     warnings.warn(
-        "Python versions 3.8 and below will soon be deprecated in the "
-        "google-ads package. Please upgrade to Python 3.9 or higher as soon as "
-        "possible.",
+        "Support for Python versions less than 3.10 is deprecated in the "
+        "google-ads package. Please upgrade to Python 3.11 or higher.",
         category=DeprecationWarning,
     )

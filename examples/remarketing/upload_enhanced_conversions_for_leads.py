@@ -20,26 +20,43 @@ and order ID. With this information, Google can tie the conversion to the ad
 that drove the lead.
 """
 
-
 import argparse
 import hashlib
 import re
 import sys
+from typing import Dict, Optional, Union
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
+from google.ads.googleads.v24.common.types.offline_user_data import (
+    UserIdentifier,
+)
+from google.ads.googleads.v24.services.services.conversion_action_service import (
+    ConversionActionServiceClient,
+)
+from google.ads.googleads.v24.services.services.conversion_upload_service import (
+    ConversionUploadServiceClient,
+)
+from google.ads.googleads.v24.services.types.conversion_upload_service import (
+    ClickConversion,
+    ClickConversionResult,
+    SessionAttributeKeyValuePair,
+    UploadClickConversionsResponse,
+)
 
 
 def main(
-    client,
-    customer_id,
-    conversion_action_id,
-    conversion_date_time,
-    conversion_value,
-    order_id,
-    gclid,
-    ad_user_data_consent,
-):
+    client: GoogleAdsClient,
+    customer_id: str,
+    conversion_action_id: str,
+    conversion_date_time: str,
+    conversion_value: float,
+    order_id: Optional[str],
+    gclid: Optional[str],
+    ad_user_data_consent: Optional[str],
+    session_attributes_encoded: Optional[str] = None,
+    session_attributes_dict: Optional[Dict[str, str]] = None,
+) -> None:
     """The main method that creates all necessary entities for the example.
 
     Args:
@@ -52,7 +69,19 @@ def main(
         gclid: The Google click ID for the click.
         ad_user_data_consent: The consent status for ad user data for all
             members in the job.
+        session_attributes_encoded: a str token of encoded session atttributes.
+            Only one of session_attributes_encoded or session_attributes_dict
+            should be passed.
+        session_attributes_dict: a dict[str, str] of session attribute
+            key value pairs. Only one of session_attributes_encoded or
+            session_attributes_dict should be passed.
     """
+    if session_attributes_encoded and session_attributes_dict:
+        raise ValueError(
+            "Only one of 'session_attributes_encoded' or "
+            "'session_attributes_dict' can be set."
+        )
+
     # [START add_user_identifiers]
     # Extract user email and phone from the raw data, normalize and hash it,
     # then wrap it in UserIdentifier objects. Create a separate UserIdentifier
@@ -73,7 +102,7 @@ def main(
     # incorrectly_populated_user_identifier.hashed_email = "...""
     # incorrectly_populated_user_identifier.hashed_phone_number = "...""
 
-    raw_record = {
+    raw_record: Dict[str, Union[str, float]] = {
         # Email address that includes a period (.) before the Gmail domain.
         "email": "alex.2@example.com",
         # Phone number to be converted to E.164 format, with a leading '+' as
@@ -92,10 +121,10 @@ def main(
     }
 
     # Constructs the click conversion.
-    click_conversion = client.get_type("ClickConversion")
+    click_conversion: ClickConversion = client.get_type("ClickConversion")
     # Creates a user identifier using the hashed email address, using the
     # normalize and hash method specifically for email addresses.
-    email_identifier = client.get_type("UserIdentifier")
+    email_identifier: UserIdentifier = client.get_type("UserIdentifier")
     # Optional: Specifies the user identifier source.
     email_identifier.user_identifier_source = (
         client.enums.UserIdentifierSourceEnum.FIRST_PARTY
@@ -110,7 +139,7 @@ def main(
     # Checks if the record has a phone number, and if so, adds a UserIdentifier
     # for it.
     if raw_record.get("phone") is not None:
-        phone_identifier = client.get_type("UserIdentifier")
+        phone_identifier: UserIdentifier = client.get_type("UserIdentifier")
         phone_identifier.hashed_phone_number = normalize_and_hash(
             raw_record["phone"]
         )
@@ -121,7 +150,9 @@ def main(
     # [START add_conversion_details]
     # Add details of the conversion.
     # Gets the conversion action resource name.
-    conversion_action_service = client.get_service("ConversionActionService")
+    conversion_action_service: ConversionActionServiceClient = (
+        client.get_service("ConversionActionService")
+    )
     click_conversion.conversion_action = (
         conversion_action_service.conversion_action_path(
             customer_id, raw_record["conversion_action_id"]
@@ -146,22 +177,45 @@ def main(
         click_conversion.consent.ad_user_data = client.enums.ConsentStatusEnum[
             raw_record["ad_user_data_consent"]
         ]
-        # [END add_conversion_details]
+
+    # [START add_session_attributes]
+    # Set one of the session_attributes_encoded or
+    # session_attributes_key_value_pairs fields if either are provided.
+    # The session attribute fields are only available to allowlisted users.
+    # To include these fields in conversion imports, upgrade to the Data Manager API.
+    if session_attributes_encoded:
+        click_conversion.session_attributes_encoded = session_attributes_encoded
+    elif session_attributes_dict:
+        for key, value in session_attributes_dict.items():
+            pair: SessionAttributeKeyValuePair = client.get_type(
+                "SessionAttributeKeyValuePair"
+            )
+            pair.session_attribute_key = key
+            pair.session_attribute_value = value
+            click_conversion.session_attributes_key_value_pairs.key_value_pairs.append(
+                pair
+            )
+            # [END add_session_attributes]
+            # [END add_conversion_details]
 
     # [START upload_conversion]
     # Creates the conversion upload service client.
-    conversion_upload_service = client.get_service("ConversionUploadService")
+    conversion_upload_service: ConversionUploadServiceClient = (
+        client.get_service("ConversionUploadService")
+    )
     # Uploads the click conversion. Partial failure should always be set to
     # True.
     # NOTE: This request only uploads a single conversion, but if you have
     # multiple conversions to upload, it's most efficient to upload them in a
     # single request. See the following for per-request limits for reference:
     # https://developers.google.com/google-ads/api/docs/best-practices/quotas#conversion_upload_service
-    response = conversion_upload_service.upload_click_conversions(
-        customer_id=customer_id,
-        conversions=[click_conversion],
-        # Enables partial failure (must be true).
-        partial_failure=True,
+    response: UploadClickConversionsResponse = (
+        conversion_upload_service.upload_click_conversions(
+            customer_id=customer_id,
+            conversions=[click_conversion],
+            # Enables partial failure (must be true).
+            partial_failure=True,
+        )
     )
     # [END upload_conversion]
 
@@ -175,16 +229,16 @@ def main(
         )
     else:
         # Prints the result.
-        result = response.results[0]
+        result: ClickConversionResult = response.results[0]
         print(
             "Uploaded conversion that occurred at "
-            f"{result.conversion_data_time} "
+            f"{result.conversion_date_time} "
             f"to {result.conversion_action}."
         )
 
 
 # [START normalize_and_hash]
-def normalize_and_hash_email_address(email_address):
+def normalize_and_hash_email_address(email_address: str) -> str:
     """Returns the result of normalizing and hashing an email address.
 
     For this use case, Google Ads requires removal of any '.' characters
@@ -196,25 +250,22 @@ def normalize_and_hash_email_address(email_address):
     Returns:
         A normalized (lowercase, removed whitespace) and SHA-265 hashed string.
     """
-    normalized_email = email_address.lower()
-    email_parts = normalized_email.split("@")
-    # Checks whether the domain of the email address is either "gmail.com"
-    # or "googlemail.com". If this regex does not match then this statement
-    # will evaluate to None.
-    is_gmail = re.match(r"^(gmail|googlemail)\.com$", email_parts[1])
+    normalized_email: str = email_address.strip().lower()
+    email_parts: list[str] = normalized_email.split("@")
 
-    # Check that there are at least two segments and the second segment
-    # matches the above regex expression validating the email domain name.
-    if len(email_parts) > 1 and is_gmail:
-        # Removes any '.' characters from the portion of the email address
-        # before the domain if the domain is gmail.com or googlemail.com.
-        email_parts[0] = email_parts[0].replace(".", "")
+    # Check that there are at least two segments
+    if len(email_parts) > 1:
+        # Removes any '.' and '+' characters from the portion of the email address
+        # before the domain
+        chars_to_remove = ".+"
+        translation_table = str.maketrans("", "", chars_to_remove)
+        email_parts[0] = email_parts[0].translate(translation_table)
         normalized_email = "@".join(email_parts)
 
     return normalize_and_hash(normalized_email)
 
 
-def normalize_and_hash(s):
+def normalize_and_hash(s: str) -> str:
     """Normalizes and hashes a string with SHA-256.
 
     Private customer data must be hashed during upload, as described at:
@@ -231,7 +282,13 @@ def normalize_and_hash(s):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
+    # GoogleAdsClient will read the google-ads.yaml configuration file in the
+    # home directory if none is specified.
+    googleads_client: GoogleAdsClient = GoogleAdsClient.load_from_storage(
+        version="v24"
+    )
+
+    parser: argparse.ArgumentParser = argparse.ArgumentParser(
         description="Imports offline call conversion values for calls related "
         "to your ads."
     )
@@ -279,20 +336,49 @@ if __name__ == "__main__":
         help="the Google click ID (gclid) for the click.",
     )
     parser.add_argument(
-        "-d",
+        "-n",
         "--ad_user_data_consent",
         type=str,
-        choices=[e.name for e in googleads_client.enums.ConsentStatusEnum],
+        choices=[
+            e.name
+            for e in googleads_client.enums.ConsentStatusEnum
+            if e.name not in ("UNSPECIFIED", "UNKNOWN")
+        ],
         help=(
             "The data consent status for ad user data for all members in "
             "the job."
         ),
     )
-    args = parser.parse_args()
+    # A mutually exclusive group means that session_attributes_encoded and
+    # session_attributes_key_value_pairs cannot be passed in at the same time.
+    session_attributes = parser.add_mutually_exclusive_group()
+    session_attributes.add_argument(
+        "-e",
+        "--session_attributes_encoded",
+        type=str,
+        default=None,
+        help=("A session attributes token."),
+    )
+    session_attributes.add_argument(
+        "-k",
+        "--session_attributes_key_value_pairs",
+        nargs="+",
+        type=str,
+        default=None,
+        help=(
+            "A space-delimited list of session attribute key value pairs. Each "
+            "pair should be separated by an equal sign, for example: "
+            "'-k gad_campaignid=12345 gad_source=1'"
+        ),
+    )
+    args: argparse.Namespace = parser.parse_args()
 
-    # GoogleAdsClient will read the google-ads.yaml configuration file in the
-    # home directory if none is specified.
-    googleads_client = GoogleAdsClient.load_from_storage(version="v17")
+    session_attributes_dict: Optional[Dict[str, str]] = None
+    if args.session_attributes_key_value_pairs:
+        # Convert the string-based input to a dict
+        session_attributes_dict = dict(
+            pair.split("=") for pair in args.session_attributes_key_value_pairs
+        )
 
     try:
         main(
@@ -304,6 +390,11 @@ if __name__ == "__main__":
             args.order_id,
             args.gclid,
             args.ad_user_data_consent,
+            # Only one of 'session_attributes_encoded' or
+            # 'session_attributes_dict' can be passed at a time. If both are
+            # passed the example will fail with a ValueError.
+            session_attributes_encoded=args.session_attributes_encoded,
+            session_attributes_dict=session_attributes_dict,
         )
     except GoogleAdsException as ex:
         print(

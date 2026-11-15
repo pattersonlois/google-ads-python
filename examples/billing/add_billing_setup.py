@@ -23,10 +23,10 @@ In the case of consolidated billing, a payments account is linked to the
 manager account and is linked to a customer account via a billing setup.
 """
 
-
 import argparse
 from datetime import datetime, timedelta
 import sys
+from typing import Any, Optional
 from uuid import uuid4
 
 from google.ads.googleads.client import GoogleAdsClient
@@ -34,7 +34,10 @@ from google.ads.googleads.errors import GoogleAdsException
 
 
 def main(
-    client, customer_id, payments_account_id=None, payments_profile_id=None
+    client: GoogleAdsClient,
+    customer_id: str,
+    payments_account_id: Optional[str] = None,
+    payments_profile_id: Optional[str] = None,
 ):
     """The main method that creates all necessary entities for the example.
 
@@ -64,8 +67,11 @@ def main(
 
 
 def create_billing_setup(
-    client, customer_id, payments_account_id=None, payments_profile_id=None
-):
+    client: GoogleAdsClient,
+    customer_id: str,
+    payments_account_id: Optional[str] = None,
+    payments_profile_id: Optional[str] = None,
+) -> Any:
     """Creates and returns a new billing setup instance.
 
     The new billing setup will have its payment details populated. One of the
@@ -109,7 +115,9 @@ def create_billing_setup(
     return billing_setup
 
 
-def set_billing_setup_date_times(client, customer_id, billing_setup):
+def set_billing_setup_date_times(
+    client: GoogleAdsClient, customer_id: str, billing_setup: Any
+):
     """Sets the starting and ending date times for the new billing setup.
 
     Queries the customer's account to see if there are any approved billing
@@ -222,7 +230,7 @@ if __name__ == "__main__":
 
     # GoogleAdsClient will read the google-ads.yaml configuration file in the
     # home directory if none is specified.
-    googleads_client = GoogleAdsClient.load_from_storage(version="v17")
+    googleads_client = GoogleAdsClient.load_from_storage(version="v24")
 
     try:
         main(

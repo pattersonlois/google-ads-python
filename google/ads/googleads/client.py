@@ -14,29 +14,51 @@
 """A client and common configurations for the Google Ads API."""
 
 from importlib import import_module, metadata
+import inspect
 import logging.config
 
 from google.api_core.gapic_v1.client_info import ClientInfo
-import grpc.experimental
+import grpc
 from proto.enums import ProtoEnumMeta
+from google.auth.credentials import Credentials
+
+from google.protobuf.message import Message as ProtobufMessageType
+from proto import Message as ProtoPlusMessageType
 
 from google.ads.googleads import config, oauth2, util
 from google.ads.googleads.interceptors import (
+    metadata_interceptor,
     MetadataInterceptor,
+    AsyncUnaryUnaryMetadataInterceptor,
+    AsyncUnaryStreamMetadataInterceptor,
     ExceptionInterceptor,
+    AsyncUnaryUnaryExceptionInterceptor,
+    AsyncUnaryStreamExceptionInterceptor,
     LoggingInterceptor,
+    AsyncUnaryUnaryLoggingInterceptor,
+    AsyncUnaryStreamLoggingInterceptor,
 )
+
+from types import ModuleType
+from typing import Any, Callable, Dict, List, Sequence, Tuple, Union
 
 _logger = logging.getLogger(__name__)
 
 _SERVICE_CLIENT_TEMPLATE = "{}Client"
+_ASYNC_SERVICE_CLIENT_TEMPLATE = "{}AsyncClient"
 
-_VALID_API_VERSIONS = ["v17", "v16"]
+_VALID_API_VERSIONS = ["v26", "v25", "v24", "v23"]
+_MESSAGE_TYPES = ["common", "enums", "errors", "resources", "services"]
 _DEFAULT_VERSION = _VALID_API_VERSIONS[0]
 
 # Retrieve the version of this client library to be sent in the user-agent
 # information of API calls.
-_CLIENT_INFO = ClientInfo(client_library_version=metadata.version("google-ads"))
+try:
+    _CLIENT_INFO = ClientInfo(
+        client_library_version=metadata.version("google-ads")
+    )
+except metadata.PackageNotFoundError:
+    _CLIENT_INFO = ClientInfo()
 
 # See options at grpc.github.io/grpc/core/group__grpc__arg__keys.html
 _GRPC_CHANNEL_OPTIONS = [
@@ -52,6 +74,81 @@ if unary_stream_single_threading_option:
     _GRPC_CHANNEL_OPTIONS.append((unary_stream_single_threading_option, 1))
 
 
+def _augment_rest_metadata(
+    client: "GoogleAdsClient",
+    metadata_items: Sequence[Tuple[str, Union[str, bytes]]],
+) -> Sequence[Tuple[str, Union[str, bytes]]]:
+    """Appends Google Ads headers to outgoing REST request metadata."""
+    updated = list(metadata_items) if metadata_items else []
+    if client.developer_token:
+        updated.append(("developer-token", client.developer_token))
+    if client.login_customer_id:
+        updated.append(("login-customer-id", client.login_customer_id))
+    if client.linked_customer_id:
+        updated.append(("linked-customer-id", client.linked_customer_id))
+
+    for i, (key, value) in enumerate(updated):
+        if key == "x-goog-api-client" and isinstance(value, str):
+            if client._ads_assistant:
+                value += f" gaada/{client._ads_assistant}"
+            if (
+                metadata_interceptor._PROTOBUF_VERSION
+                and "pb" not in value
+            ):
+                value += (
+                    f" pb/{metadata_interceptor._PROTOBUF_VERSION}"
+                    f"{metadata_interceptor._PB_IMPL_HEADER}"
+                )
+            updated[i] = (key, value)
+            break
+
+    return tuple(updated)
+
+
+class _LazyRestTransport:
+    """Lazily initializes a synchronous REST transport on first access."""
+
+    def __init__(self, factory: Callable[[], Any]) -> None:
+        self._factory = factory
+        self._transport: Any = None
+
+    def _get(self) -> Any:
+        if self._transport is None:
+            self._transport = self._factory()
+        return self._transport
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        return getattr(self._get(), name)
+
+    def close(self) -> None:
+        if self._transport is not None:
+            self._transport.close()
+
+
+class _AsyncLazyRestTransport:
+    """Lazily initializes an asynchronous REST transport on first access."""
+
+    def __init__(self, factory: Callable[[], Any]) -> None:
+        self._factory = factory
+        self._transport: Any = None
+
+    def _get(self) -> Any:
+        if self._transport is None:
+            self._transport = self._factory()
+        return self._transport
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
+        return getattr(self._get(), name)
+
+    async def close(self) -> None:
+        if self._transport is not None:
+            await self._transport.close()
+
+
 class _EnumGetter:
     """An intermediate getter for retrieving enums from service clients.
 
@@ -59,19 +156,18 @@ class _EnumGetter:
     class instances when accessed.
     """
 
-    def __init__(self, client):
+    def __init__(self, client: "GoogleAdsClient") -> None:
         """Initializer for the _EnumGetter class.
 
         Args:
-            version: a str indicating the version of the Google Ads API to be
-              used.
+            client: An instance of the GoogleAdsClient class.
         """
-        self._client = client
-        self._version = client.version or _DEFAULT_VERSION
-        self._enums = None
-        self._use_proto_plus = client.use_proto_plus
+        self._client: "GoogleAdsClient" = client
+        self._version: str = client.version or _DEFAULT_VERSION
+        self._enums: Union[Tuple[str], None] = None
+        self._use_proto_plus: bool = client.use_proto_plus
 
-    def __dir__(self):
+    def __dir__(self) -> Tuple[str]:
         """Overrides behavior when dir() is called on instances of this class.
 
         It's useful to use dir() to see a list of available attributes. Since
@@ -85,7 +181,9 @@ class _EnumGetter:
 
         return self._enums
 
-    def __getattr__(self, name):
+    def __getattr__(
+        self, name: str
+    ) -> Union[ProtoPlusMessageType, ProtobufMessageType]:
         """Dynamically loads the given enum class instance.
 
         Args:
@@ -94,14 +192,14 @@ class _EnumGetter:
         Returns:
             An instance of the enum proto message class.
         """
-        if not name in self.__dir__():
+        if name not in self.__dir__():
             raise AttributeError(
                 f"'{type(self).__name__}' object has no attribute '{name}'"
             )
         try:
             enum_class = self._client.get_type(name)
 
-            if self._use_proto_plus == True:
+            if self._use_proto_plus:
                 for attr in dir(enum_class):
                     attr_val = getattr(enum_class, attr)
                     if isinstance(attr_val, ProtoEnumMeta):
@@ -113,7 +211,7 @@ class _EnumGetter:
                 f"'{type(self).__name__}' object has no attribute '{name}'"
             )
 
-    def __getstate__(self):
+    def __getstate__(self) -> Dict[str, Any]:
         """Returns self serialized as a dict.
 
         Since this class overrides __getattr__ we define this method to help
@@ -125,7 +223,7 @@ class _EnumGetter:
         """
         return self.__dict__.copy()
 
-    def __setstate__(self, d):
+    def __setstate__(self, d: Dict[str, Any]) -> None:
         """Deserializes self with the given dictionary.
 
         Since this class overrides __getattr__ we define this method to help
@@ -142,7 +240,11 @@ class GoogleAdsClient:
     """Google Ads client used to configure settings and fetch services."""
 
     @classmethod
-    def copy_from(cls, destination, origin):
+    def copy_from(
+        cls,
+        destination: Union[ProtoPlusMessageType, ProtobufMessageType],
+        origin: Union[ProtoPlusMessageType, ProtobufMessageType],
+    ) -> Union[ProtoPlusMessageType, ProtobufMessageType]:
         """Copies protobuf and proto-plus messages into one-another.
 
         This method consolidates the CopyFrom logic of protobuf and proto-plus
@@ -156,7 +258,7 @@ class GoogleAdsClient:
         return util.proto_copy_from(destination, origin)
 
     @classmethod
-    def _get_client_kwargs(cls, config_data):
+    def _get_client_kwargs(cls, config_data: Dict[str, Any]) -> Dict[str, Any]:
         """Converts configuration dict into kwargs required by the client.
 
         Args:
@@ -178,13 +280,11 @@ class GoogleAdsClient:
             "linked_customer_id": config_data.get("linked_customer_id"),
             "http_proxy": config_data.get("http_proxy"),
             "use_proto_plus": config_data.get("use_proto_plus"),
-            "use_cloud_org_for_api_access": config_data.get(
-                "use_cloud_org_for_api_access"
-            ),
+            "ads_assistant": config_data.get("ads_assistant"),
         }
 
     @classmethod
-    def _get_api_services_by_version(cls, version):
+    def _get_api_services_by_version(cls, version: str) -> ModuleType:
         """Returns a module with all services and types for a given API version.
 
         Args:
@@ -206,7 +306,9 @@ class GoogleAdsClient:
         return version_module
 
     @classmethod
-    def load_from_env(cls, version=None):
+    def load_from_env(
+        cls, version: Union[str, None] = None
+    ) -> "GoogleAdsClient":
         """Creates a GoogleAdsClient with data stored in the env variables.
 
         Args:
@@ -219,12 +321,14 @@ class GoogleAdsClient:
         Raises:
             ValueError: If the configuration lacks a required field.
         """
-        config_data = config.load_from_env()
-        kwargs = cls._get_client_kwargs(config_data)
+        config_data: Dict[str, Any] = config.load_from_env()
+        kwargs: Dict[str, Any] = cls._get_client_kwargs(config_data)
         return cls(**dict(version=version, **kwargs))
 
     @classmethod
-    def load_from_string(cls, yaml_str, version=None):
+    def load_from_string(
+        cls, yaml_str: str, version: Union[str, None] = None
+    ) -> "GoogleAdsClient":
         """Creates a GoogleAdsClient with data stored in the YAML string.
 
         Args:
@@ -239,12 +343,16 @@ class GoogleAdsClient:
         Raises:
             ValueError: If the configuration lacks a required field.
         """
-        config_data = config.parse_yaml_document_to_dict(yaml_str)
-        kwargs = cls._get_client_kwargs(config_data)
+        config_data: Dict[str, Any] = config.parse_yaml_document_to_dict(
+            yaml_str
+        )
+        kwargs: Dict[str, Any] = cls._get_client_kwargs(config_data)
         return cls(**dict(version=version, **kwargs))
 
     @classmethod
-    def load_from_dict(cls, config_dict, version=None):
+    def load_from_dict(
+        cls, config_dict: Dict[str, Any], version: Union[str, None] = None
+    ) -> "GoogleAdsClient":
         """Creates a GoogleAdsClient with data stored in the config_dict.
 
         Args:
@@ -259,12 +367,14 @@ class GoogleAdsClient:
         Raises:
             ValueError: If the configuration lacks a required field.
         """
-        config_data = config.load_from_dict(config_dict)
-        kwargs = cls._get_client_kwargs(config_data)
+        config_data: Dict[str, Any] = config.load_from_dict(config_dict)
+        kwargs: Dict[str, Any] = cls._get_client_kwargs(config_data)
         return cls(**dict(version=version, **kwargs))
 
     @classmethod
-    def load_from_storage(cls, path=None, version=None):
+    def load_from_storage(
+        cls, path: Union[str, None] = None, version: Union[str, None] = None
+    ) -> "GoogleAdsClient":
         """Creates a GoogleAdsClient with data stored in the specified file.
 
         Args:
@@ -281,28 +391,28 @@ class GoogleAdsClient:
             IOError: If the configuration file can't be loaded.
             ValueError: If the configuration file lacks a required field.
         """
-        config_data = config.load_from_yaml_file(path)
-        kwargs = cls._get_client_kwargs(config_data)
+        config_data: Dict[str, Any] = config.load_from_yaml_file(path)
+        kwargs: Dict[str, Any] = cls._get_client_kwargs(config_data)
         return cls(**dict(version=version, **kwargs))
 
     def __init__(
         self,
-        credentials,
-        developer_token,
-        endpoint=None,
-        login_customer_id=None,
-        logging_config=None,
-        linked_customer_id=None,
-        version=None,
-        http_proxy=None,
-        use_proto_plus=False,
-        use_cloud_org_for_api_access=None,
+        credentials: Dict[str, Any],
+        developer_token: Union[str, None] = None,
+        endpoint: Union[str, None] = None,
+        login_customer_id: Union[str, None] = None,
+        logging_config: Union[Dict[str, Any], None] = None,
+        linked_customer_id: Union[str, None] = None,
+        version: Union[str, None] = None,
+        http_proxy: Union[str, None] = None,
+        use_proto_plus: bool = False,
+        ads_assistant: Union[str, None] = None,
     ):
         """Initializer for the GoogleAdsClient.
 
         Args:
             credentials: a google.oauth2.credentials.Credentials instance.
-            developer_token: a str developer token.
+            developer_token: an optional str developer token.
             endpoint: a str specifying an optional alternative API endpoint.
             login_customer_id: a str specifying a login customer ID.
             logging_config: a dict specifying logging config options.
@@ -311,31 +421,33 @@ class GoogleAdsClient:
             http_proxy: a str specifying the proxy URI through which to connect.
             use_proto_plus: a bool specifying whether or not to use proto-plus
                 for protobuf message interfaces.
-            use_cloud_org_for_api_access: a str specifying whether to use the
-                Google Cloud Organization of your Google Cloud project instead
-                of developer token to determine your Google Ads API access
-                levels. Use this flag only if you are enrolled into a limited
-                pilot that supports this configuration
+            ads_assistant: a str specifying the Google Ads API Assistant version.
         """
         if logging_config:
             logging.config.dictConfig(logging_config)
 
-        self.credentials = credentials
-        self.developer_token = developer_token
-        self.endpoint = endpoint
-        self.login_customer_id = login_customer_id
-        self.linked_customer_id = linked_customer_id
-        self.version = version
-        self.http_proxy = http_proxy
-        self.use_proto_plus = use_proto_plus
-        self.use_cloud_org_for_api_access = use_cloud_org_for_api_access
-        self.enums = _EnumGetter(self)
+        self.credentials: Credentials = credentials
+        self.developer_token: Union[str, None] = developer_token
+        self.endpoint: Union[str, None] = endpoint
+        self.login_customer_id: Union[str, None] = login_customer_id
+        self.linked_customer_id: Union[str, None] = linked_customer_id
+        self.version: Union[str, None] = version
+        self.http_proxy: Union[str, None] = http_proxy
+        self.use_proto_plus: bool = use_proto_plus
+        self.enums: _EnumGetter = _EnumGetter(self)
+        self._ads_assistant: Union[str, None] = ads_assistant
 
         # If given, write the http_proxy channel option for GRPC to use
         if http_proxy:
             _GRPC_CHANNEL_OPTIONS.append(("grpc.http_proxy", http_proxy))
 
-    def get_service(self, name, version=_DEFAULT_VERSION, interceptors=None):
+    def get_service(
+        self,
+        name: str,
+        version: str = _DEFAULT_VERSION,
+        interceptors: Union[list, None] = None,
+        is_async: bool = False,
+    ) -> Any:
         """Returns a service client instance for the specified service_name.
 
         Args:
@@ -347,6 +459,8 @@ class GoogleAdsClient:
             interceptors: an optional list of interceptors to include in
               requests. NOTE: this parameter is not intended for non-Google use
               and is not officially supported.
+            is_async: whether or not to retrieve the async version of the
+              service client being requested.
 
         Returns:
             A service client instance associated with the given service_name.
@@ -357,53 +471,270 @@ class GoogleAdsClient:
         # If version is specified when the instance is created,
         # override any version specified as an argument.
         version = self.version if self.version else version
-        api_module = self._get_api_services_by_version(version)
+        # api_module = self._get_api_services_by_version(version)
+        services_path: str = f"google.ads.googleads.{version}.services.services"
+        snaked: str = util.convert_upper_case_to_snake_case(name)
         interceptors = interceptors or []
 
         try:
-            service_client_class = getattr(
-                api_module, _SERVICE_CLIENT_TEMPLATE.format(name)
+            service_module: Any = import_module(f"{services_path}.{snaked}")
+
+            if is_async:
+                service_name = _ASYNC_SERVICE_CLIENT_TEMPLATE.format(name)
+            else:
+                service_name = _SERVICE_CLIENT_TEMPLATE.format(name)
+
+            service_client_class: Any = util.get_nested_attr(
+                service_module, service_name
             )
-        except AttributeError:
+        except (AttributeError, ModuleNotFoundError):
             raise ValueError(
                 'Specified service {}" does not exist in Google '
                 "Ads API {}.".format(name, version)
             )
 
-        service_transport_class = service_client_class.get_transport_class()
+        service_transport_class: Any = service_client_class.get_transport_class(
+            "grpc_asyncio" if is_async else None
+        )
 
-        endpoint = (
+        endpoint: str = (
             self.endpoint
             if self.endpoint
             else service_client_class.DEFAULT_ENDPOINT
         )
 
-        channel = service_transport_class.create_channel(
+        is_legacy_resumable: bool = (
+            name == "YouTubeVideoUploadService"
+            and "developer_token"
+            in inspect.signature(service_client_class.__init__).parameters
+        )
+        is_resumable: bool = (
+            name == "YouTubeVideoUploadService" and not is_legacy_resumable
+        )
+
+        if is_async:
+            # In async requests, separate UnaryUnary and UnaryStream
+            # interceptors need to be added to the channel.
+            interceptors: List = interceptors or []
+            interceptors = interceptors + [
+                AsyncUnaryUnaryMetadataInterceptor(
+                    self.developer_token,
+                    self.login_customer_id,
+                    self.linked_customer_id,
+                    ads_assistant=self._ads_assistant,
+                ),
+                AsyncUnaryStreamMetadataInterceptor(
+                    self.developer_token,
+                    self.login_customer_id,
+                    self.linked_customer_id,
+                    ads_assistant=self._ads_assistant,
+                ),
+                AsyncUnaryUnaryLoggingInterceptor(_logger, version, endpoint),
+                AsyncUnaryStreamLoggingInterceptor(_logger, version, endpoint),
+                AsyncUnaryUnaryExceptionInterceptor(
+                    version, use_proto_plus=self.use_proto_plus
+                ),
+                AsyncUnaryStreamExceptionInterceptor(
+                    version, use_proto_plus=self.use_proto_plus
+                ),
+            ]
+
+            channel: grpc.aio.Channel = service_transport_class.create_channel(
+                host=endpoint,
+                credentials=self.credentials,
+                options=_GRPC_CHANNEL_OPTIONS,
+                interceptors=interceptors,
+            )
+
+            if is_resumable:
+                service_transport = (
+                    self._configure_async_resumable_upload_transport(
+                        name=name,
+                        services_path=services_path,
+                        snaked=snaked,
+                        endpoint=endpoint,
+                        service_transport_class=service_transport_class,
+                        channel=channel,
+                    )
+                )
+                return service_client_class(transport=service_transport)
+
+            service_transport: Any = service_transport_class(
+                channel=channel, client_info=_CLIENT_INFO
+            )
+
+            if is_legacy_resumable:
+                # Legacy YouTubeVideoUploadService uses a prototype REST
+                # transport that accepts credentials and Ads headers directly.
+                return service_client_class(
+                    transport=service_transport,
+                    credentials=self.credentials,
+                    developer_token=self.developer_token,
+                    login_customer_id=self.login_customer_id,
+                    linked_customer_id=self.linked_customer_id,
+                )
+
+            return service_client_class(transport=service_transport)
+
+        channel: grpc.Channel = service_transport_class.create_channel(
             host=endpoint,
             credentials=self.credentials,
             options=_GRPC_CHANNEL_OPTIONS,
         )
 
-        interceptors = interceptors + [
+        interceptors: List[
+            Union[
+                grpc.UnaryUnaryClientInterceptor,
+                grpc.UnaryStreamClientInterceptor,
+            ]
+        ] = interceptors + [
             MetadataInterceptor(
                 self.developer_token,
                 self.login_customer_id,
                 self.linked_customer_id,
-                self.use_cloud_org_for_api_access,
+                ads_assistant=self._ads_assistant,
             ),
             LoggingInterceptor(_logger, version, endpoint),
             ExceptionInterceptor(version, use_proto_plus=self.use_proto_plus),
         ]
 
-        channel = grpc.intercept_channel(channel, *interceptors)
+        channel: grpc.Channel = grpc.intercept_channel(channel, *interceptors)
 
-        service_transport = service_transport_class(
+        if is_resumable:
+            service_transport = self._configure_resumable_upload_transport(
+                name=name,
+                services_path=services_path,
+                snaked=snaked,
+                endpoint=endpoint,
+                service_transport_class=service_transport_class,
+                channel=channel,
+            )
+            return service_client_class(transport=service_transport)
+
+        service_transport: Any = service_transport_class(
             channel=channel, client_info=_CLIENT_INFO
         )
 
+        if is_legacy_resumable:
+            # Legacy YouTubeVideoUploadService uses a prototype REST
+            # transport that accepts credentials and Ads headers directly.
+            return service_client_class(
+                transport=service_transport,
+                credentials=self.credentials,
+                developer_token=self.developer_token,
+                login_customer_id=self.login_customer_id,
+                linked_customer_id=self.linked_customer_id,
+            )
+
         return service_client_class(transport=service_transport)
 
-    def get_type(self, name, version=_DEFAULT_VERSION):
+    def _configure_resumable_upload_transport(
+        self,
+        name: str,
+        services_path: str,
+        snaked: str,
+        endpoint: str,
+        service_transport_class: Any,
+        channel: grpc.Channel,
+    ) -> Any:
+        """Configures a hybrid gRPC/REST transport for resumable uploads."""
+        service_transport = service_transport_class(
+            channel=lambda *args, **kwargs: channel,
+            credentials=self.credentials,
+            host=endpoint,
+            client_info=_CLIENT_INFO,
+        )
+        ads_client = self
+
+        def _make_rest_transport() -> Any:
+            rest_mod = import_module(
+                f"{services_path}.{snaked}.transports.rest"
+            )
+            base_interceptor = getattr(rest_mod, f"{name}RestInterceptor")
+            rest_transport_cls = getattr(rest_mod, f"{name}RestTransport")
+
+            class _AdsRestInterceptor(base_interceptor):
+                def pre_create_you_tube_video_upload(
+                    self, request: Any, metadata: Any
+                ) -> Any:
+                    return request, _augment_rest_metadata(
+                        ads_client, metadata
+                    )
+
+            rest_transport = rest_transport_cls(
+                host=endpoint,
+                credentials=ads_client.credentials,
+                client_info=_CLIENT_INFO,
+                interceptor=_AdsRestInterceptor(),
+            )
+            if ads_client.http_proxy:
+                rest_transport._session.proxies = {
+                    "http": ads_client.http_proxy,
+                    "https": ads_client.http_proxy,
+                }
+            return rest_transport
+
+        service_transport._rest_transport = _LazyRestTransport(
+            _make_rest_transport
+        )
+        return service_transport
+
+    def _configure_async_resumable_upload_transport(
+        self,
+        name: str,
+        services_path: str,
+        snaked: str,
+        endpoint: str,
+        service_transport_class: Any,
+        channel: grpc.aio.Channel,
+    ) -> Any:
+        """Configures an async hybrid gRPC/REST resumable upload transport."""
+        service_transport = service_transport_class(
+            channel=lambda *args, **kwargs: channel,
+            credentials=self.credentials,
+            host=endpoint,
+            client_info=_CLIENT_INFO,
+        )
+        grpc_asyncio_mod = import_module(
+            f"{services_path}.{snaked}.transports.grpc_asyncio"
+        )
+        if getattr(grpc_asyncio_mod, "HAS_ASYNC_REST", False):
+            ads_client = self
+
+            def _make_async_rest_transport() -> Any:
+                rest_asyncio_mod = import_module(
+                    f"{services_path}.{snaked}.transports.rest_asyncio"
+                )
+                base_interceptor = getattr(
+                    rest_asyncio_mod, f"Async{name}RestInterceptor"
+                )
+                rest_transport_cls = getattr(
+                    rest_asyncio_mod, f"Async{name}RestTransport"
+                )
+
+                class _AdsAsyncRestInterceptor(base_interceptor):
+                    async def pre_create_you_tube_video_upload(
+                        self, request: Any, metadata: Any
+                    ) -> Any:
+                        return request, _augment_rest_metadata(
+                            ads_client, metadata
+                        )
+
+                return rest_transport_cls(
+                    host=endpoint,
+                    credentials=ads_client.credentials,
+                    client_info=_CLIENT_INFO,
+                    interceptor=_AdsAsyncRestInterceptor(),
+                )
+
+            service_transport._rest_transport = _AsyncLazyRestTransport(
+                _make_async_rest_transport
+            )
+        return service_transport
+
+    def get_type(
+        self, name: str, version: str = _DEFAULT_VERSION
+    ) -> Union[ProtoPlusMessageType, ProtobufMessageType]:
         """Returns the specified common, enum, error, or resource type.
 
         Args:
@@ -437,18 +768,26 @@ class GoogleAdsClient:
 
         # If version is specified when the instance is created,
         # override any version specified as an argument.
-        version = self.version if self.version else version
+        version: str = self.version if self.version else version
+        type_classes: ModuleType = self._get_api_services_by_version(version)
 
-        try:
-            type_classes = self._get_api_services_by_version(version)
-            message_class = getattr(type_classes, name)
-        except AttributeError:
-            raise ValueError(
-                f"Specified type '{name}' does not exist in "
-                f"Google Ads API {version}"
-            )
+        for type_name in _MESSAGE_TYPES:
+            if type_name == "services":
+                path: str = f"{type_name}.types.{name}"
+            else:
+                path: str = f"{type_name}.{name}"
 
-        if self.use_proto_plus == True:
-            return message_class()
-        else:
-            return util.convert_proto_plus_to_protobuf(message_class())
+            try:
+                message_class: Union[ProtoPlusMessageType, ProtobufMessageType] = util.get_nested_attr(type_classes, path)  # type: ignore[no-untyped-call]
+
+                if self.use_proto_plus:
+                    return message_class()
+                else:
+                    return util.convert_proto_plus_to_protobuf(message_class())  # type: ignore[no-untyped-call]
+            except AttributeError:
+                pass
+
+        raise ValueError(
+            f"Specified type '{name}' does not exist in "
+            f"Google Ads API {version}"
+        )

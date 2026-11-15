@@ -13,12 +13,12 @@
 # limitations under the License.
 """Tests for the Logging gRPC Interceptor."""
 
-
 from importlib import import_module
 import json
 import logging
+import asyncio
 from unittest import mock
-from unittest import TestCase
+from unittest import TestCase, IsolatedAsyncioTestCase
 from types import SimpleNamespace
 
 from google.ads.googleads import client as Client
@@ -30,7 +30,6 @@ from google.ads.googleads.interceptors.helpers import (
 )
 import google.ads.googleads.interceptors.logging_interceptor as interceptor_module
 from google.ads.googleads import util
-
 
 default_version = Client._DEFAULT_VERSION
 module_prefix = f"google.ads.googleads.{default_version}"
@@ -51,13 +50,20 @@ customer_user_access_invitation = import_module(
     f"{module_prefix}.resources.types.customer_user_access_invitation"
 )
 change_event = import_module(f"{module_prefix}.resources.types.change_event")
-feed = import_module(f"{module_prefix}.resources.types.feed")
 local_services_lead = import_module(
     f"{module_prefix}.resources.types.local_services_lead"
 )
 local_services_lead_conversation = import_module(
     f"{module_prefix}.resources.types.local_services_lead_conversation"
 )
+multi_party_auth_review = import_module(
+    f"{module_prefix}.resources.types.multi_party_auth_review"
+)
+
+
+class AwaitableMagicMock(mock.MagicMock):
+    def __await__(self):
+        return self._await_impl().__await__()
 
 
 class LoggingInterceptorTest(TestCase):
@@ -306,9 +312,10 @@ class LoggingInterceptorTest(TestCase):
         )
         mock_trailing_metadata = mock_response.trailing_metadata()
 
-        with mock.patch("logging.config.dictConfig"), mock.patch(
-            "google.ads.googleads.client._logger"
-        ) as mock_logger:
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch("google.ads.googleads.client._logger") as mock_logger,
+        ):
             interceptor = self._create_test_interceptor(logger=mock_logger)
             interceptor.intercept_unary_unary(
                 mock_continuation_fn, mock_client_call_details, mock_request
@@ -361,9 +368,10 @@ class LoggingInterceptorTest(TestCase):
 
         mock_continuation_fn = mock.Mock(return_value=mock_response)
 
-        with mock.patch("logging.config.dictConfig"), mock.patch(
-            "google.ads.googleads.client._logger"
-        ) as mock_logger:
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch("google.ads.googleads.client._logger") as mock_logger,
+        ):
             interceptor = self._create_test_interceptor(logger=mock_logger)
             interceptor.intercept_unary_stream(
                 mock_continuation_fn, mock_client_call_details, mock_request
@@ -415,9 +423,10 @@ class LoggingInterceptorTest(TestCase):
         mock_continuation_fn = self._get_mock_continuation_fn(fail=True)
         mock_request = self._get_mock_request()
 
-        with mock.patch("logging.config.dictConfig"), mock.patch(
-            "google.ads.googleads.client._logger"
-        ) as mock_logger:
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch("google.ads.googleads.client._logger") as mock_logger,
+        ):
             interceptor = self._create_test_interceptor(logger=mock_logger)
             mock_response = interceptor.intercept_unary_unary(
                 mock_continuation_fn, mock_client_call_details, mock_request
@@ -470,9 +479,10 @@ class LoggingInterceptorTest(TestCase):
         mock_response.add_done_callback = mock_add_done_callback
         mock_continuation_fn = mock.Mock(return_value=mock_response)
 
-        with mock.patch("logging.config.dictConfig"), mock.patch(
-            "google.ads.googleads.client._logger"
-        ) as mock_logger:
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch("google.ads.googleads.client._logger") as mock_logger,
+        ):
             interceptor = self._create_test_interceptor(logger=mock_logger)
             mock_response = interceptor.intercept_unary_stream(
                 mock_continuation_fn, mock_client_call_details, mock_request
@@ -551,9 +561,10 @@ class LoggingInterceptorTest(TestCase):
         """Calls _format_json_object with error obj's debug_error_string."""
         interceptor = self._create_test_interceptor()
 
-        with mock.patch("logging.config.dictConfig"), mock.patch.object(
-            interceptor, "format_json_object"
-        ) as mock_parser:
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch.object(interceptor, "format_json_object") as mock_parser,
+        ):
             mock_exception = self._get_mock_transport_exception()
             interceptor._parse_exception_to_str(mock_exception)
             mock_parser.assert_called_once_with(
@@ -817,23 +828,6 @@ class LoggingInterceptorTest(TestCase):
         copy = mask_message(response, "REDACTED")
         self.assertEqual(copy.results[0].change_event.user_email, "REDACTED")
 
-    def test_mask_search_places_location_feed_data(self):
-        """Masks Feed.places_location_feed_data on a SearchStream response."""
-        response = google_ads_service.SearchGoogleAdsStreamResponse()
-        row = google_ads_service.GoogleAdsRow(
-            feed=feed.Feed(
-                places_location_feed_data=feed.Feed.PlacesLocationFeedData(
-                    email_address="test@test.com"
-                )
-            )
-        )
-        response.results.append(row)
-        copy = mask_message(response, "REDACTED")
-        self.assertEqual(
-            copy.results[0].feed.places_location_feed_data.email_address,
-            "REDACTED",
-        )
-
     def test_mask_customer_user_access(self):
         """Copies and masks a CustomerUserAccess message instance."""
         customer_user_access_obj = customer_user_access.CustomerUserAccess(
@@ -874,20 +868,6 @@ class LoggingInterceptorTest(TestCase):
         self.assertIsNot(copy, request)
         self.assertEqual(copy.email_address, "REDACTED")
 
-    def test_mask_places_location_feed_data(self):
-        """Copies and masks a PlacesLocationFeedData instance."""
-        message = feed.Feed(
-            places_location_feed_data=feed.Feed.PlacesLocationFeedData(
-                email_address="test@test.com"
-            )
-        )
-        copy = mask_message(message, "REDACTED")
-        self.assertIsInstance(copy, message.__class__)
-        self.assertIsNot(copy, message)
-        self.assertEqual(
-            copy.places_location_feed_data.email_address, "REDACTED"
-        )
-
     def test_mask_customer_user_access_invitation_email(self):
         """Copies and masks a CustomerUserAccessInvitation instance."""
         message = customer_user_access_invitation.CustomerUserAccessInvitation(
@@ -897,11 +877,30 @@ class LoggingInterceptorTest(TestCase):
         self.assertIsInstance(copy, message.__class__)
         self.assertEqual(copy.email_address, "REDACTED")
 
-    def test_mask_local_services_lead(self):
-        """Copies and masks a LocalServicesLead instance."""
-        contact_details = local_services_lead.ContactDetails(
+    def test_mask_local_services_lead_pre_v25(self):
+        """Copies and masks a LocalServicesLead instance in v24."""
+        local_services_lead_v24 = import_module(
+            "google.ads.googleads.v24.resources.types.local_services_lead"
+        )
+        contact_details = local_services_lead_v24.ContactDetails(
             phone_number="800-555-0100",
             email="dana@test.com",
+            consumer_name="Dana Test",
+        )
+        message = local_services_lead_v24.LocalServicesLead(
+            contact_details=contact_details
+        )
+        copy = mask_message(message, "REDACTED")
+        self.assertIsInstance(copy, message.__class__)
+        self.assertEqual(copy.contact_details.email, "REDACTED")
+        self.assertEqual(copy.contact_details.phone_number, "REDACTED")
+        self.assertEqual(copy.contact_details.consumer_name, "REDACTED")
+
+    def test_mask_local_services_lead(self):
+        """Copies and masks a LocalServicesLead instance in v25."""
+        contact_details = local_services_lead.ContactDetails(
+            phone_number="800-555-0100",
+            phone_number_extension="222",
             consumer_name="Dana Test",
         )
         message = local_services_lead.LocalServicesLead(
@@ -909,8 +908,10 @@ class LoggingInterceptorTest(TestCase):
         )
         copy = mask_message(message, "REDACTED")
         self.assertIsInstance(copy, message.__class__)
-        self.assertEqual(copy.contact_details.email, "REDACTED")
         self.assertEqual(copy.contact_details.phone_number, "REDACTED")
+        self.assertEqual(
+            copy.contact_details.phone_number_extension, "REDACTED"
+        )
         self.assertEqual(copy.contact_details.consumer_name, "REDACTED")
 
     def test_mask_local_services_lead_conversation(self):
@@ -926,3 +927,381 @@ class LoggingInterceptorTest(TestCase):
         copy = mask_message(message, "REDACTED")
         self.assertIsInstance(copy, message.__class__)
         self.assertEqual(copy.message_details.text, "REDACTED")
+
+    def test_mask_multi_party_auth_review(self):
+        """Copies and masks a MultiPartyAuthReview instance."""
+        invite = customer_user_access_invitation.CustomerUserAccessInvitation(
+            email_address="invitee@test.com"
+        )
+        review = multi_party_auth_review.CustomerUserAccessInvitationReview(
+            new_customer_user_access_invitation=invite
+        )
+        message = multi_party_auth_review.MultiPartyAuthReview(
+            request_user_email="sensitive@test.com",
+            customer_user_access_invitation_review=review,
+        )
+        copy = mask_message(message, "REDACTED")
+        self.assertIsInstance(copy, message.__class__)
+        self.assertEqual(copy.request_user_email, "REDACTED")
+        self.assertEqual(
+            copy.customer_user_access_invitation_review.new_customer_user_access_invitation.email_address,
+            "REDACTED",
+        )
+
+
+class AsyncLoggingInterceptorTest(IsolatedAsyncioTestCase):
+    """Tests for the google.ads.googleads.interceptors._AsyncLoggingInterceptor class."""
+
+    _MOCK_CONFIG = {"test": True}
+    _MOCK_ENDPOINT = "www.test-endpoint.com"
+    _MOCK_INITIAL_METADATA = [
+        ("developer-token", "123456"),
+        ("header", "value"),
+    ]
+    _MOCK_CUSTOMER_ID = "123456"
+    _MOCK_REQUEST_ID = "654321xyz"
+    _MOCK_METHOD = "test/method"
+    _MOCK_STREAM = "Testing 123"
+    _MOCK_TRAILING_METADATA = (("request-id", _MOCK_REQUEST_ID),)
+    _MOCK_TRANSPORT_ERROR_METADATA = tuple()
+    _MOCK_ERROR_MESSAGE = "Test error message"
+    _MOCK_TRANSPORT_ERROR_MESSAGE = "Received RST_STREAM with error code 2"
+    _MOCK_DEBUG_ERROR_STRING = '{"description":"Error received from peer"}'
+    _MOCK_RESPONSE_MSG = google_ads_service.SearchGoogleAdsResponse()
+    _MOCK_EXCEPTION = mock.Mock()
+    _MOCK_ERROR = mock.Mock()
+    _MOCK_FAILURE = mock.Mock()
+
+    def _create_test_interceptor(
+        self, logger=mock.Mock(), version=None, endpoint=_MOCK_ENDPOINT
+    ):
+        if not version:
+            version = default_version
+
+        return interceptor_module._AsyncLoggingInterceptor(
+            logger, version, endpoint
+        )
+
+    def _get_mock_client_call_details(self):
+        mock_client_call_details = mock.Mock()
+        mock_client_call_details.method = self._MOCK_METHOD
+        mock_client_call_details.metadata = self._MOCK_INITIAL_METADATA
+        return mock_client_call_details
+
+    def _get_mock_request(self):
+        mock_request = mock.Mock()
+        mock_request.customer_id = self._MOCK_CUSTOMER_ID
+        return mock_request
+
+    def _get_trailing_metadata_fn(self):
+        def mock_trailing_metadata_fn():
+            return self._MOCK_TRAILING_METADATA
+
+        return mock_trailing_metadata_fn
+
+    def _get_mock_exception(self):
+        exception = self._MOCK_EXCEPTION
+        error = self._MOCK_ERROR
+        error.message = self._MOCK_ERROR_MESSAGE
+        exception.request_id = self._MOCK_REQUEST_ID
+        exception.failure = self._MOCK_FAILURE
+        exception.failure.errors = [error]
+        exception.error = self._MOCK_ERROR
+        exception.error.trailing_metadata = self._get_trailing_metadata_fn()
+        return exception
+
+    def _get_mock_response(self, failed=False, streaming=False):
+        mock_response = AwaitableMagicMock()
+
+        async def mock_trailing_metadata():
+            return self._MOCK_TRAILING_METADATA
+
+        mock_response.trailing_metadata = mock_trailing_metadata
+
+        if failed:
+
+            def mock_exception_fn():
+                return self._get_mock_exception()
+
+            mock_response.exception = mock_exception_fn
+            mock_response.code = lambda: self._get_mock_exception()
+        else:
+            del mock_response.exception
+
+            async def mock_code():
+                return 0
+
+            mock_response.code = mock_code
+
+        async def get_result():
+            if streaming:
+                return self._MOCK_STREAM
+            return self._MOCK_RESPONSE_MSG
+
+        mock_response._await_impl = get_result
+
+        if streaming:
+            mock_response.read = mock.AsyncMock(return_value=self._MOCK_STREAM)
+        else:
+            del mock_response.read
+
+        del mock_response.result
+
+        def mock_add_done_callback(fn):
+            fn(mock_response)
+
+        mock_response.add_done_callback = mock_add_done_callback
+
+        return mock_response
+
+    def _get_mock_continuation_fn(self, fail=False):
+        async def mock_continuation_fn(*args):
+            mock_response = self._get_mock_response(fail)
+            return mock_response
+
+        return mock_continuation_fn
+
+    async def test_intercept_unary_unary_unconfigured(self):
+        mock_client_call_details = self._get_mock_client_call_details()
+        mock_continuation_fn = self._get_mock_continuation_fn()
+        mock_request = self._get_mock_request()
+        logging.disable(logging.CRITICAL)
+        logger_spy = mock.Mock(wraps=Client._logger)
+        interceptor = self._create_test_interceptor(logger_spy)
+
+        await interceptor.intercept_unary_unary(
+            mock_continuation_fn, mock_client_call_details, mock_request
+        )
+
+        # Allow async tasks to run
+        await asyncio.sleep(0)
+
+        logger_spy.debug.assert_not_called()
+        logger_spy.info.assert_not_called()
+        logger_spy.warning.assert_not_called()
+
+    async def test_intercept_unary_stream_unconfigured(self):
+        mock_client_call_details = self._get_mock_client_call_details()
+        mock_continuation_fn = self._get_mock_continuation_fn()
+        mock_request = self._get_mock_request()
+        logging.disable(logging.CRITICAL)
+        logger_spy = mock.Mock(wraps=Client._logger)
+        interceptor = self._create_test_interceptor(logger_spy)
+
+        await interceptor.intercept_unary_stream(
+            mock_continuation_fn, mock_client_call_details, mock_request
+        )
+
+        await asyncio.sleep(0)
+
+        logger_spy.debug.assert_not_called()
+        logger_spy.info.assert_not_called()
+        logger_spy.warning.assert_not_called()
+
+    async def test_intercept_unary_unary_successful_request(self):
+        mock_client_call_details = self._get_mock_client_call_details()
+        mock_continuation_fn = self._get_mock_continuation_fn()
+        mock_request = self._get_mock_request()
+
+        # We need to get the response to assert against it
+        mock_response = await mock_continuation_fn(
+            mock_client_call_details, mock_request
+        )
+        mock_trailing_metadata = await mock_response.trailing_metadata()
+
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch("google.ads.googleads.client._logger") as mock_logger,
+        ):
+            interceptor = self._create_test_interceptor(logger=mock_logger)
+            await interceptor.intercept_unary_unary(
+                mock_continuation_fn, mock_client_call_details, mock_request
+            )
+
+            await asyncio.sleep(0)
+
+            mock_logger.info.assert_called_once_with(
+                interceptor._SUMMARY_LOG_LINE.format(
+                    self._MOCK_CUSTOMER_ID,
+                    self._MOCK_ENDPOINT,
+                    mock_client_call_details.method,
+                    self._MOCK_REQUEST_ID,
+                    False,
+                    None,
+                )
+            )
+
+            initial_metadata = interceptor.parse_metadata_to_json(
+                mock_client_call_details.metadata
+            )
+            trailing_metadata = interceptor.parse_metadata_to_json(
+                mock_trailing_metadata
+            )
+
+            mock_logger.debug.assert_called_once_with(
+                interceptor._FULL_REQUEST_LOG_LINE.format(
+                    self._MOCK_METHOD,
+                    self._MOCK_ENDPOINT,
+                    initial_metadata,
+                    mock_request,
+                    trailing_metadata,
+                    self._MOCK_RESPONSE_MSG,
+                )
+            )
+
+    async def test_intercept_unary_stream_successful_request(self):
+        mock_client_call_details = self._get_mock_client_call_details()
+        mock_request = self._get_mock_request()
+
+        # Setup mock response for stream
+        mock_response = self._get_mock_response(streaming=True)
+        mock_trailing_metadata = await mock_response.trailing_metadata()
+
+        async def mock_continuation_fn(*args):
+            return mock_response
+
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch("google.ads.googleads.client._logger") as mock_logger,
+        ):
+            interceptor = self._create_test_interceptor(logger=mock_logger)
+            await interceptor.intercept_unary_stream(
+                mock_continuation_fn, mock_client_call_details, mock_request
+            )
+
+            await asyncio.sleep(0)
+
+            mock_logger.info.assert_called()
+            mock_logger.info.assert_called_once_with(
+                interceptor._SUMMARY_LOG_LINE.format(
+                    self._MOCK_CUSTOMER_ID,
+                    self._MOCK_ENDPOINT,
+                    mock_client_call_details.method,
+                    self._MOCK_REQUEST_ID,
+                    False,
+                    None,
+                )
+            )
+
+            initial_metadata = interceptor.parse_metadata_to_json(
+                mock_client_call_details.metadata
+            )
+            trailing_metadata = interceptor.parse_metadata_to_json(
+                mock_trailing_metadata
+            )
+
+            # Async interceptor doesn't use _cache in the same way or at all?
+            # _AsyncLoggingInterceptor doesn't seem to populate self._cache in intercept_unary_stream
+            # It just logs request.
+            # Let's check _AsyncLoggingInterceptor.intercept_unary_stream
+            # It does NOT set self._cache.
+            # So we skip cache assertions.
+
+            mock_logger.debug.assert_called_once_with(
+                interceptor._FULL_REQUEST_LOG_LINE.format(
+                    self._MOCK_METHOD,
+                    self._MOCK_ENDPOINT,
+                    initial_metadata,
+                    mock_request,
+                    trailing_metadata,
+                    None,  # Result is None for stream in async interceptor
+                )
+            )
+
+    async def test_intercept_unary_unary_failed_request(self):
+        mock_client_call_details = self._get_mock_client_call_details()
+        mock_continuation_fn = self._get_mock_continuation_fn(fail=True)
+        mock_request = self._get_mock_request()
+
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch("google.ads.googleads.client._logger") as mock_logger,
+        ):
+            interceptor = self._create_test_interceptor(logger=mock_logger)
+            mock_response = await interceptor.intercept_unary_unary(
+                mock_continuation_fn, mock_client_call_details, mock_request
+            )
+
+            await asyncio.sleep(0)
+
+            mock_trailing_metadata = await mock_response.trailing_metadata()
+
+            mock_logger.warning.assert_called_once_with(
+                interceptor._SUMMARY_LOG_LINE.format(
+                    self._MOCK_CUSTOMER_ID,
+                    self._MOCK_ENDPOINT,
+                    mock_client_call_details.method,
+                    self._MOCK_REQUEST_ID,
+                    True,
+                    self._MOCK_ERROR_MESSAGE,
+                )
+            )
+
+            initial_metadata = interceptor.parse_metadata_to_json(
+                mock_client_call_details.metadata
+            )
+            trailing_metadata = interceptor.parse_metadata_to_json(
+                mock_trailing_metadata
+            )
+
+            mock_logger.info.assert_called_once_with(
+                interceptor._FULL_FAULT_LOG_LINE.format(
+                    self._MOCK_METHOD,
+                    self._MOCK_ENDPOINT,
+                    initial_metadata,
+                    mock_request,
+                    trailing_metadata,
+                    str(mock_response.exception().failure),
+                )
+            )
+
+    async def test_intercept_unary_stream_failed_request(self):
+        mock_response = self._get_mock_response(failed=True, streaming=True)
+
+        mock_client_call_details = self._get_mock_client_call_details()
+        mock_request = self._get_mock_request()
+
+        async def mock_continuation_fn(*args):
+            return mock_response
+
+        with (
+            mock.patch("logging.config.dictConfig"),
+            mock.patch("google.ads.googleads.client._logger") as mock_logger,
+        ):
+            interceptor = self._create_test_interceptor(logger=mock_logger)
+            await interceptor.intercept_unary_stream(
+                mock_continuation_fn, mock_client_call_details, mock_request
+            )
+
+            await asyncio.sleep(0)
+
+            mock_trailing_metadata = await mock_response.trailing_metadata()
+
+            mock_logger.warning.assert_called_once_with(
+                interceptor._SUMMARY_LOG_LINE.format(
+                    self._MOCK_CUSTOMER_ID,
+                    self._MOCK_ENDPOINT,
+                    mock_client_call_details.method,
+                    self._MOCK_REQUEST_ID,
+                    True,
+                    self._MOCK_ERROR_MESSAGE,
+                )
+            )
+
+            initial_metadata = interceptor.parse_metadata_to_json(
+                mock_client_call_details.metadata
+            )
+            trailing_metadata = interceptor.parse_metadata_to_json(
+                mock_trailing_metadata
+            )
+
+            mock_logger.info.assert_called_once_with(
+                interceptor._FULL_FAULT_LOG_LINE.format(
+                    self._MOCK_METHOD,
+                    self._MOCK_ENDPOINT,
+                    initial_metadata,
+                    mock_request,
+                    trailing_metadata,
+                    str(mock_response.exception().failure),
+                )
+            )

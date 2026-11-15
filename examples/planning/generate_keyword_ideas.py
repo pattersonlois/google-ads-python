@@ -14,11 +14,29 @@
 # limitations under the License.
 """This example generates keyword ideas from a list of seed keywords."""
 
-
 import argparse
 import sys
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
+from google.ads.googleads.v24.enums.types.keyword_plan_competition_level import (
+    KeywordPlanCompetitionLevelEnum,
+)
+from google.ads.googleads.v24.enums.types.keyword_plan_network import (
+    KeywordPlanNetworkEnum,
+)
+from google.ads.googleads.v24.services.services.geo_target_constant_service.client import (
+    GeoTargetConstantServiceClient,
+)
+from google.ads.googleads.v24.services.services.google_ads_service.client import (
+    GoogleAdsServiceClient,
+)
+from google.ads.googleads.v24.services.services.keyword_plan_idea_service.client import (
+    KeywordPlanIdeaServiceClient,
+)
+from google.ads.googleads.v24.services.types.keyword_plan_idea_service import (
+    GenerateKeywordIdeasRequest,
+    GenerateKeywordIdeaResult,
+)
 
 # Location IDs are listed here:
 # https://developers.google.com/google-ads/api/reference/data/geotargets
@@ -33,19 +51,29 @@ _DEFAULT_LANGUAGE_ID = "1000"  # language ID for English
 
 # [START generate_keyword_ideas]
 def main(
-    client, customer_id, location_ids, language_id, keyword_texts, page_url
+    client: GoogleAdsClient,
+    customer_id: str,
+    location_ids: list[str],
+    language_id: str,
+    keyword_texts: list[str],
+    page_url: str,
 ):
-    keyword_plan_idea_service = client.get_service("KeywordPlanIdeaService")
-    keyword_competition_level_enum = (
+    keyword_plan_idea_service: KeywordPlanIdeaServiceClient = (
+        client.get_service("KeywordPlanIdeaService")
+    )
+    keyword_competition_level_enum: KeywordPlanCompetitionLevelEnum = (
         client.enums.KeywordPlanCompetitionLevelEnum
     )
-    keyword_plan_network = (
+    keyword_plan_network: KeywordPlanNetworkEnum = (
         client.enums.KeywordPlanNetworkEnum.GOOGLE_SEARCH_AND_PARTNERS
     )
-    location_rns = map_locations_ids_to_resource_names(client, location_ids)
-    language_rn = client.get_service("GoogleAdsService").language_constant_path(
-        language_id
+    location_rns: list[str] = map_locations_ids_to_resource_names(
+        client, location_ids
     )
+    google_ads_service: GoogleAdsServiceClient = client.get_service(
+        "GoogleAdsService"
+    )
+    language_rn: str = google_ads_service.language_constant_path(language_id)
 
     # Either keywords or a page_url are required to generate keyword ideas
     # so this raises an error if neither are provided.
@@ -58,7 +86,9 @@ def main(
     # Only one of the fields "url_seed", "keyword_seed", or
     # "keyword_and_url_seed" can be set on the request, depending on whether
     # keywords, a page_url or both were passed to this function.
-    request = client.get_type("GenerateKeywordIdeasRequest")
+    request: GenerateKeywordIdeasRequest = client.get_type(
+        "GenerateKeywordIdeasRequest"
+    )
     request.customer_id = customer_id
     request.language = language_rn
     request.geo_target_constants = location_rns
@@ -87,6 +117,7 @@ def main(
         request=request
     )
 
+    idea: GenerateKeywordIdeaResult
     for idea in keyword_ideas:
         competition_value = idea.keyword_idea_metrics.competition.name
         print(
@@ -98,7 +129,9 @@ def main(
     # [END generate_keyword_ideas]
 
 
-def map_locations_ids_to_resource_names(client, location_ids):
+def map_locations_ids_to_resource_names(
+    client: GoogleAdsClient, location_ids: list[str]
+) -> list[str]:
     """Converts a list of location IDs to resource names.
 
     Args:
@@ -108,9 +141,10 @@ def map_locations_ids_to_resource_names(client, location_ids):
     Returns:
         a list of resource name strings using the given location IDs.
     """
-    build_resource_name = client.get_service(
-        "GeoTargetConstantService"
-    ).geo_target_constant_path
+    geo_target_constant_service: GeoTargetConstantServiceClient = (
+        client.get_service("GeoTargetConstantService")
+    )
+    build_resource_name = geo_target_constant_service.geo_target_constant_path
     return [build_resource_name(location_id) for location_id in location_ids]
 
 
@@ -148,7 +182,7 @@ if __name__ == "__main__":
         help="Space-delimited list of location criteria IDs",
     )
     # To determine the appropriate language ID, see:
-    # https://developers.google.com/google-ads/api/reference/data/codes-formats#expandable-7
+    # https://developers.google.com/google-ads/api/data/codes-formats#languages
     parser.add_argument(
         "-i",
         "--language_id",
@@ -170,7 +204,7 @@ if __name__ == "__main__":
 
     # GoogleAdsClient will read the google-ads.yaml configuration file in the
     # home directory if none is specified.
-    googleads_client = GoogleAdsClient.load_from_storage(version="v17")
+    googleads_client = GoogleAdsClient.load_from_storage(version="v24")
 
     try:
         main(

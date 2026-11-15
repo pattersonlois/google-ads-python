@@ -26,13 +26,38 @@ import sys
 
 from google.ads.googleads.client import GoogleAdsClient
 from google.ads.googleads.errors import GoogleAdsException
+from google.ads.googleads.v24.services.services.google_ads_service.client import (
+    GoogleAdsServiceClient,
+)
+from google.ads.googleads.v24.services.types.google_ads_service import (
+    SearchGoogleAdsRequest,
+    SearchPagedResponse,
+)
+from google.ads.googleads.v24.resources.types.customer_user_access import (
+    CustomerUserAccess,
+)
+from google.ads.googleads.v24.services.services.customer_user_access_service.client import (
+    CustomerUserAccessServiceClient,
+)
+from google.ads.googleads.v24.services.types.customer_user_access_service import (
+    CustomerUserAccessOperation,
+    MutateCustomerUserAccessResponse,
+)
 
 from google.api_core import protobuf_helpers
+from google.protobuf.field_mask_pb2 import FieldMask
+
+from typing import Optional
 
 _ACCESS_ROLES = ["ADMIN", "STANDARD", "READ_ONLY", "EMAIL_ONLY"]
 
 
-def main(client, customer_id, email_address, access_role):
+def main(
+    client: GoogleAdsClient,
+    customer_id: str,
+    email_address: str,
+    access_role: str,
+) -> None:
     """Runs the example.
 
     Args:
@@ -43,13 +68,15 @@ def main(client, customer_id, email_address, access_role):
       access_role: The updated access role.
     """
 
-    user_id = get_user_access(client, customer_id, email_address)
+    user_id: Optional[int] = get_user_access(client, customer_id, email_address)
 
     if user_id:
         modify_user_access(client, customer_id, user_id, access_role)
 
 
-def get_user_access(client, customer_id, email_address):
+def get_user_access(
+    client: GoogleAdsClient, customer_id: str, email_address: str
+) -> Optional[int]:
     """Gets the customer user access given an email address.
 
     Args:
@@ -61,7 +88,9 @@ def get_user_access(client, customer_id, email_address):
     Returns:
       The user ID integer if a customer is found, otherwise None.
     """
-    googleads_service = client.get_service("GoogleAdsService")
+    googleads_service: GoogleAdsServiceClient = client.get_service(
+        "GoogleAdsService"
+    )
 
     # Creates a query that retrieves all customer user accesses.
     # Use the LIKE query for filtering to ignore the text case for email
@@ -75,14 +104,22 @@ def get_user_access(client, customer_id, email_address):
         FROM customer_user_access
         WHERE customer_user_access.email_address LIKE '{email_address}'"""
 
-    search_request = client.get_type("SearchGoogleAdsRequest")
+    search_request: SearchGoogleAdsRequest = client.get_type(
+        "SearchGoogleAdsRequest"
+    )
     search_request.customer_id = customer_id
     search_request.query = query
 
-    response = googleads_service.search(request=search_request)
+    response: SearchPagedResponse = googleads_service.search(
+        request=search_request
+    )
 
     try:
-        user_access = next(iter(response)).customer_user_access
+        # Assuming response is an iterable of GoogleAdsRow, and each row has customer_user_access
+        # For safety, check if response has items, though next(iter()) handles empty.
+        user_access: CustomerUserAccess = next(
+            iter(response)
+        ).customer_user_access
         print(
             "Customer user access with "
             f"User ID = '{user_access.user_id}', "
@@ -98,7 +135,9 @@ def get_user_access(client, customer_id, email_address):
         return None
 
 
-def modify_user_access(client, customer_id, user_id, access_role):
+def modify_user_access(
+    client: GoogleAdsClient, customer_id: str, user_id: int, access_role: str
+) -> None:
     """Modifies the user access role to a specified value.
 
     Args:
@@ -107,31 +146,58 @@ def modify_user_access(client, customer_id, user_id, access_role):
       user_id: ID of the user whose access role is being modified.
       access_role: The updated access role.
     """
-    customer_user_access_service = client.get_service(
-        "CustomerUserAccessService"
+    customer_user_access_service: CustomerUserAccessServiceClient = (
+        client.get_service("CustomerUserAccessService")
     )
-    customer_user_access_op = client.get_type("CustomerUserAccessOperation")
+    customer_user_access_op: CustomerUserAccessOperation = client.get_type(
+        "CustomerUserAccessOperation"
+    )
+    # access_role_enum is client.enums.AccessRoleEnum, which is an EnumTypeWrapper.
+    # We use getattr to get the specific enum member by its string name.
+    # The type of access_role_enum itself is complex if fully specified, using it directly is fine.
     access_role_enum = client.enums.AccessRoleEnum
-    customer_user_access = customer_user_access_op.update
+    customer_user_access: CustomerUserAccess = customer_user_access_op.update
     customer_user_access.resource_name = (
         customer_user_access_service.customer_user_access_path(
             customer_id, user_id
         )
     )
-    customer_user_access.access_role = getattr(access_role_enum, access_role)
+    # customer_user_access.access_role expects an AccessRoleEnum value (int)
+    customer_user_access.access_role = getattr(
+        access_role_enum, access_role
+    ).value  # Use .value for int
+    update_mask: FieldMask = protobuf_helpers.field_mask(
+        None, customer_user_access._pb
+    )
     client.copy_from(
         customer_user_access_op.update_mask,
-        protobuf_helpers.field_mask(None, customer_user_access._pb),
+        update_mask,
     )
 
-    response = customer_user_access_service.mutate_customer_user_access(
-        customer_id=customer_id, operation=customer_user_access_op
+    response: MutateCustomerUserAccessResponse = (
+        customer_user_access_service.mutate_customer_user_access(
+            customer_id=customer_id, operation=customer_user_access_op
+        )
     )
 
-    print(
-        "Successfully modified customer user access with resource name: "
-        f"{response.result.resource_name}."
-    )
+    if response.result.multi_party_auth_review:
+        # A multi-party auth review was triggered. See
+        # FetchAndApprovePendingMultiPartyAuthReviews.cs for an example on how
+        # to fetch and approve an MPA auth review.
+        print(
+            "A multi-party auth review was triggered. The MPA review resource "
+            f"name is {response.result.multi_party_auth_review}. Ask a second "
+            "administrator to approve this request to make the requested user "
+            "access changes. See "
+            "advanced_operations/fetch_and_approve_pending_multi_party_auth_reviews.py "
+            "for an example on how to approve an MPA auth review using the API."
+        )
+    else:
+        # A multi-party auth review was not triggered.
+        print(
+            "Successfully modified customer user access with resource name: "
+            f"{response.result.resource_name}."
+        )
 
 
 if __name__ == "__main__":
@@ -167,7 +233,7 @@ if __name__ == "__main__":
 
     # GoogleAdsClient will read the google-ads.yaml configuration file in the
     # home directory if none is specified.
-    googleads_client = GoogleAdsClient.load_from_storage(version="v17")
+    googleads_client = GoogleAdsClient.load_from_storage(version="v24")
     try:
         main(
             googleads_client,
